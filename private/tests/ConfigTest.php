@@ -52,6 +52,20 @@ username = \"admin\"
         self::assertSame('sk-new', $config->string('openrouter.api_key'));
     }
 
+    public function testWriteStringUpdatesModelIds(): void
+    {
+        $config = $this->configFrom('[openrouter]
+default_chat_model = "anthropic/claude-sonnet-4.5"
+default_image_model = "black-forest-labs/flux.2-pro"
+');
+        $config->writeString('openrouter', 'default_chat_model', 'meta-llama/llama-3.3-70b-instruct:free');
+        $config->writeString('openrouter', 'default_image_model', 'black-forest-labs/flux.2-pro');
+        $raw = (string) file_get_contents($this->root . '/config/config.ini');
+        self::assertStringContainsString('default_chat_model = "meta-llama/llama-3.3-70b-instruct:free"', $raw);
+        self::assertSame('meta-llama/llama-3.3-70b-instruct:free', $config->string('openrouter.default_chat_model'));
+        self::assertSame('black-forest-labs/flux.2-pro', $config->string('openrouter.default_image_model'));
+    }
+
     private function configFrom(string $ini): Config
     {
         $path = $this->root . '/config/config.ini';

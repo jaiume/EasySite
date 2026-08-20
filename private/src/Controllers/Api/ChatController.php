@@ -59,8 +59,8 @@ final class ChatController
             $message = $prefix === '' ? $message : $prefix . ($message !== '' ? "\n\n" . $message : '');
         }
         $previewPath = $this->previewPath(is_array($body) ? (string) ($body['preview_path'] ?? '') : '');
-        $chatModel = $this->sessionModel('chat_model', 'openrouter.default_chat_model');
-        $imageModel = $this->sessionModel('image_model', 'openrouter.default_image_model');
+        $chatModel = $this->config->string('openrouter.default_chat_model');
+        $imageModel = $this->config->string('openrouter.default_image_model');
         $resume = !empty($body['continue']);
         if (!$resume && $message === '') {
             $response->getBody()->write(json_encode([
@@ -129,13 +129,6 @@ final class ChatController
         $response->getBody()->write(json_encode($payload, JSON_UNESCAPED_SLASHES));
 
         return $response->withHeader('Content-Type', 'application/json');
-    }
-
-    private function sessionModel(string $sessionKey, string $configKey): string
-    {
-        $value = $_SESSION[$sessionKey] ?? $this->config->string($configKey);
-
-        return is_string($value) && $value !== '' ? $value : $this->config->string($configKey);
     }
 
     private function previewPath(string $raw): string

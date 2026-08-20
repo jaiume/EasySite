@@ -62,13 +62,13 @@ final class SettingsController
         }
         try {
             $this->config->writeString('openrouter', 'api_key', $apiKey);
+            $this->config->writeString('openrouter', 'default_chat_model', $chat);
+            $this->config->writeString('openrouter', 'default_image_model', $image);
         } catch (\Throwable $e) {
-            $_SESSION['flash'] = ['ok' => false, 'message' => 'Could not save the API key to config.ini.'];
+            $_SESSION['flash'] = ['ok' => false, 'message' => 'Could not save settings to config.ini.'];
 
             return (new Response(302))->withHeader('Location', '/cp/settings');
         }
-        $_SESSION['chat_model'] = $chat;
-        $_SESSION['image_model'] = $image;
         $_SESSION['flash'] = ['ok' => true, 'message' => 'Settings saved.'];
 
         return (new Response(302))->withHeader('Location', '/cp/settings');
@@ -76,15 +76,11 @@ final class SettingsController
 
     private function currentChatModel(): string
     {
-        $value = $_SESSION['chat_model'] ?? $this->config->string('openrouter.default_chat_model');
-
-        return is_string($value) ? $value : '';
+        return $this->config->string('openrouter.default_chat_model');
     }
 
     private function currentImageModel(): string
     {
-        $value = $_SESSION['image_model'] ?? $this->config->string('openrouter.default_image_model');
-
-        return is_string($value) ? $value : '';
+        return $this->config->string('openrouter.default_image_model');
     }
 }
