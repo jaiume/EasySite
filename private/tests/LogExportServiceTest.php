@@ -50,25 +50,20 @@ INI);
     {
         $bundle = $this->service()->build();
         self::assertStringStartsWith('cp-logs-', $bundle['filename']);
-        self::assertStringEndsWith('.zip', $bundle['filename']);
+        self::assertStringEndsWith('.json', $bundle['filename']);
 
-        $files = $this->unzip($bundle['bytes']);
-        self::assertArrayHasKey('logs/tools.jsonl', $files);
-        self::assertArrayHasKey('logs/spend.jsonl', $files);
-        self::assertArrayHasKey('chats/current.json', $files);
-        self::assertArrayHasKey('environment.json', $files);
-        self::assertArrayHasKey('config.redacted.ini', $files);
-        self::assertArrayHasKey('runs.json', $files);
-        self::assertStringContainsString('write_file', $files['logs/tools.jsonl']);
-        self::assertStringContainsString('[REDACTED]', $files['config.redacted.ini']);
-        self::assertStringNotContainsString('hunter2', $files['config.redacted.ini']);
-        self::assertStringNotContainsString('sk-or-v1-test-fixture', $files['config.redacted.ini']);
-        self::assertStringNotContainsString('sk-or-v1-test-fixture', $files['chats/current.json']);
-        self::assertStringContainsString('abc123.run', $files['runs.json']);
-        $env = json_decode($files['environment.json'], true);
-        self::assertIsArray($env);
-        self::assertTrue($env['openrouter']['has_api_key']);
-        self::assertSame('anthropic/claude-sonnet-4.5', $env['openrouter']['chat_model']);
+        $data = $this->decode($bundle['bytes']);
+        self::assertContains('tools', $data['included']);
+        self::assertContains('spend', $data['included']);
+        self::assertContains('chat', $data['included']);
+        self::assertContains('config_ini', $data['included']);
+        self::assertSame('write_file', $data['tools'][0]['tool'] ?? null);
+        self::assertStringContainsString('[REDACTED]', (string) $data['config_ini']);
+        self::assertStringNotContainsString('hunter2', (string) $data['config_ini']);
+        self::assertStringNotContainsString('sk-or-v1-test-fixture', json_encode($data));
+        self::assertSame('abc123.run', $data['runs'][0]['name'] ?? null);
+        self::assertTrue($data['environment']['openrouter']['has_api_key']);
+        self::assertSame('anthropic/claude-sonnet-4.5', $data['environment']['openrouter']['chat_model']);
     }
 
     public function testSummariesReportExistingFiles(): void
@@ -90,25 +85,36 @@ INI);
         $path = $this->root . '/var/data/logs/tools.jsonl';
         $fh = fopen($path, 'wb');
         self::assertIsResource($fh);
-        fwrite($fh, "KEEP-START\n");
+        fwrite($fh, "{\"keep\":\"start\"}\n");
         fwrite($fh, str_repeat("x", 1048576 + 64));
-        fwrite($fh, "\nKEEP-END\n");
+        fwrite($fh, "\n{\"keep\":\"end\"}\n");
         fclose($fh);
-        $files = $this->unzip($this->service()->build()['bytes']);
-        self::assertStringContainsString('[truncated;', $files['logs/tools.jsonl']);
-        self::assertStringContainsString('KEEP-END', $files['logs/tools.jsonl']);
-        self::assertStringNotContainsString('KEEP-START', $files['logs/tools.jsonl']);
+        $data = $this->decode($this->service()->build()['bytes']);
+        self::assertContains('tools', $data['truncated']);
+        $tools = $data['tools'];
+        self::assertIsArray($tools);
+        $last = $tools[array_key_last($tools)] ?? null;
+        self::assertSame(['keep' => 'end'], $last);
+        self::assertNotContains(['keep' => 'start'], $tools);
     }
 
     public function testBuildSucceedsWhenOptionalLogsAreMissing(): void
     {
         unlink($this->root . '/var/data/logs/tools.jsonl');
-        $bundle = $this->service()->build();
-        $files = $this->unzip($bundle['bytes']);
-        $manifest = json_decode($files['manifest.json'], true);
-        self::assertIsArray($manifest);
-        self::assertContains('logs/tools.jsonl', $manifest['missing']);
-        self::assertArrayNotHasKey('logs/tools.jsonl', $files);
+        $data = $this->decode($this->service()->build()['bytes']);
+        self::assertContains('tools', $data['missing']);
+        self::assertNull($data['tools']);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function decode(string $bytes): array
+    {
+        $data = json_decode($bytes, true);
+        self::assertIsArray($data, 'export was not valid JSON');
+
+        return $data;
     }
 
     private function service(): LogExportService
@@ -116,30 +122,6 @@ INI);
         $config = new Config($this->root . '/config/config.ini', $this->root);
 
         return new LogExportService($config, new TimeBudget(60, 52, 47, false));
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private function unzip(string $bytes): array
-    {
-        $tmp = $this->root . '/out.zip';
-        $dir = $this->root . '/unzipped';
-        file_put_contents($tmp, $bytes);
-        $archive = new \ZipArchive();
-        self::assertTrue($archive->open($tmp) === true, 'zip could not be opened');
-        $archive->extractTo($dir);
-        $archive->close();
-        $out = [];
-        $it = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS));
-        foreach ($it as $file) {
-            if ($file->isFile()) {
-                $rel = substr($file->getPathname(), strlen($dir) + 1);
-                $out[str_replace('\\', '/', $rel)] = (string) file_get_contents($file->getPathname());
-            }
-        }
-
-        return $out;
     }
 
     private function rm(string $dir): void

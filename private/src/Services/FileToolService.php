@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\DAO\RevisionStore;
 use App\Support\Config;
+use App\Support\PageTheme;
 use App\Support\PathGuard;
 use App\Support\PathGuardException;
 use App\Support\SearchQuery;
@@ -31,7 +32,7 @@ final class FileToolService
     {
         try {
             $path = (string) ($args['path'] ?? '.');
-            $depth = (int) ($args['depth'] ?? 1);
+            $depth = (int) ($args['depth'] ?? 2);
             if ($depth < 1) {
                 $depth = 1;
             }
@@ -96,10 +97,10 @@ final class FileToolService
             }
             $this->logger->log('read_file', $path, strlen($contents));
 
-            return ServiceResult::ok('File contents', [
+            return ServiceResult::ok('File contents. Line prefixes (N|) are not part of the file — omit them in edit_file.', [
                 'path' => $path,
                 'bytes' => strlen($contents),
-                'content' => $contents,
+                'content' => self::numbered($contents),
                 'binary' => false,
             ]);
         } catch (PathGuardException $e) {
@@ -135,17 +136,17 @@ final class FileToolService
     {
         try {
             $path = (string) ($args['path'] ?? '');
-            $old = (string) ($args['old'] ?? $args['find'] ?? '');
-            $new = (string) ($args['new'] ?? $args['replace'] ?? '');
-            $replaceAll = self::truthy($args['replace_all'] ?? false);
-            if ($old === '') {
-                return ServiceResult::fail('old is required (the exact text to find).', 'VALIDATION_ERROR');
+            $ops = $this->editOps($args);
+            if ($ops === []) {
+                return ServiceResult::fail('old is required (the exact text to find), or pass edits: [{old, new}].', 'VALIDATION_ERROR');
             }
-            if ($old === $new) {
-                return ServiceResult::fail('old and new are the same.', 'VALIDATION_ERROR');
+            foreach ($ops as $op) {
+                if ($this->pathGuard->detectBinaryMagic($op['new'])) {
+                    return ServiceResult::fail('Images and binaries cannot be written with edit_file. Use fetch_image, generate_image, or copy_file.', 'BINARY_FORBIDDEN');
+                }
             }
-            if ($this->pathGuard->isBinaryExtension($path) || $this->pathGuard->detectBinaryMagic($new)) {
-                return ServiceResult::fail('Images and binaries cannot be written with edit_file. Use fetch_image or generate_image.', 'BINARY_FORBIDDEN');
+            if ($this->pathGuard->isBinaryExtension($path)) {
+                return ServiceResult::fail('Images and binaries cannot be written with edit_file. Use fetch_image, generate_image, or copy_file.', 'BINARY_FORBIDDEN');
             }
             $real = $this->pathGuard->resolveExisting($path);
             if (!is_file($real)) {
@@ -161,21 +162,37 @@ final class FileToolService
             if ($this->pathGuard->detectBinaryMagic($contents)) {
                 return ServiceResult::fail('Images and binaries cannot be written with edit_file.', 'BINARY_FORBIDDEN');
             }
-            $count = substr_count($contents, $old);
-            if ($count === 0) {
-                return ServiceResult::fail('old text was not found. Copy an exact snippet from the file.', 'NOT_FOUND');
+            $total = 0;
+            foreach ($ops as $op) {
+                $old = $op['old'];
+                $new = $op['new'];
+                if ($old === '') {
+                    return ServiceResult::fail('old is required (the exact text to find).', 'VALIDATION_ERROR');
+                }
+                if ($old === $new) {
+                    return ServiceResult::fail('old and new are the same.', 'VALIDATION_ERROR');
+                }
+                $count = substr_count($contents, $old);
+                if ($count === 0) {
+                    return ServiceResult::fail(
+                        'old text was not found. Copy an exact snippet from the file (without line-number prefixes).',
+                        'NOT_FOUND',
+                        $this->editHints($contents, $old),
+                    );
+                }
+                if (!$op['replace_all'] && $count > 1) {
+                    return ServiceResult::fail(
+                        'old text matches ' . $count . ' times. Pass replace_all true, or a longer unique snippet.',
+                        'AMBIGUOUS',
+                        [(string) $count],
+                    );
+                }
+                $contents = $op['replace_all'] ? str_replace($old, $new, $contents) : self::replaceFirst($contents, $old, $new);
+                $total += $op['replace_all'] ? $count : 1;
             }
-            if (!$replaceAll && $count > 1) {
-                return ServiceResult::fail(
-                    'old text matches ' . $count . ' times. Pass replace_all true, or a longer unique snippet.',
-                    'AMBIGUOUS',
-                    [(string) $count],
-                );
-            }
-            $updated = $replaceAll ? str_replace($old, $new, $contents) : self::replaceFirst($contents, $old, $new);
-            $result = $this->persistTextFile($path, $real, $updated, 'edit_file');
+            $result = $this->persistTextFile($path, $real, $contents, 'edit_file');
             if ($result['success'] && is_array($result['data'])) {
-                $result['data']['replacements'] = $replaceAll ? $count : 1;
+                $result['data']['replacements'] = $total;
             }
 
             return $result;
@@ -329,6 +346,87 @@ final class FileToolService
     }
 
     /**
+     * @param array<string, mixed> $args
+     * @return array{success: bool, message: string, data: mixed, error: mixed}
+     */
+    public function copyFile(array $args): array
+    {
+        try {
+            $from = (string) ($args['from'] ?? $args['path'] ?? '');
+            $to = (string) ($args['to'] ?? '');
+            if ($from === '' || $to === '') {
+                return ServiceResult::fail('from and to are required.', 'VALIDATION_ERROR');
+            }
+            $src = $this->pathGuard->resolveExisting($from);
+            if (!is_file($src)) {
+                return ServiceResult::fail('Not a file. copy_file copies one file, not a folder.', 'NOT_A_FILE');
+            }
+            $dest = $this->pathGuard->resolveForWrite($to);
+            if (is_dir($dest)) {
+                return ServiceResult::fail('Destination is a directory.', 'NOT_A_FILE');
+            }
+            if (is_file($dest) && !$this->pathGuard->isBinaryExtension($dest)) {
+                $this->revisions->savePrevious($dest, (string) file_get_contents($dest));
+            }
+            if (!copy($src, $dest)) {
+                return ServiceResult::fail('Copy failed.', 'COPY_FAILED');
+            }
+            $bytes = (int) (@filesize($dest) ?: 0);
+            $this->logger->log('copy_file', $from . ' -> ' . $to, $bytes);
+
+            return ServiceResult::ok('Copied file', ['from' => $from, 'to' => $to, 'bytes' => $bytes]);
+        } catch (PathGuardException $e) {
+            return ServiceResult::fail($e->getMessage(), 'PATH_DENIED');
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $args
+     * @return array{success: bool, message: string, data: mixed, error: mixed}
+     */
+    public function inspectDraft(array $args): array
+    {
+        try {
+            $path = trim((string) ($args['path'] ?? 'index.php'));
+            if ($path === '' || $path === '.') {
+                $path = 'index.php';
+            }
+            $lower = strtolower($path);
+            if (str_ends_with($lower, '.css')) {
+                $css = $this->readStagingText($path);
+                if ($css === null) {
+                    return ServiceResult::fail('Path does not exist.', 'NOT_FOUND');
+                }
+                $theme = PageTheme::fromCss($css, $path);
+            } else {
+                $html = $this->readStagingText($path);
+                if ($html === null) {
+                    return ServiceResult::fail('Path does not exist.', 'NOT_FOUND');
+                }
+                foreach (['includes/header.php', 'includes/footer.php'] as $inc) {
+                    $chunk = $this->readStagingText($inc);
+                    if ($chunk !== null) {
+                        $html .= "\n" . $chunk;
+                    }
+                }
+                $sheets = [];
+                $siteCss = $this->readStagingText('css/site.css');
+                if ($siteCss !== null) {
+                    $sheets[] = $siteCss;
+                }
+                $theme = PageTheme::fromHtml($html, $path, $sheets);
+            }
+            $theme['path'] = $path;
+            $theme['note'] = 'This is the staging draft, not the live site. Change css/site.css with edit_file. Do not fetch Joomla or Cassiopeia CSS.';
+            $this->logger->log('inspect_draft', $path, strlen((string) json_encode($theme)));
+
+            return ServiceResult::ok('Draft look', $theme);
+        } catch (PathGuardException $e) {
+            return ServiceResult::fail($e->getMessage(), 'PATH_DENIED');
+        }
+    }
+
+    /**
      * @param list<array{path: string, type: string}> $entries
      */
     private function walk(string $dir, string $root, int $level, int $maxDepth, int $cap, array &$entries, bool &$truncated): void
@@ -417,6 +515,95 @@ final class FileToolService
         $message = $tool === 'edit_file' ? 'Edited file' : 'Wrote file';
 
         return ServiceResult::ok($message, ['path' => $path, 'bytes' => strlen($content)]);
+    }
+
+    /**
+     * @return list<array{old: string, new: string, replace_all: bool}>
+     */
+    private function editOps(array $args): array
+    {
+        $edits = $args['edits'] ?? null;
+        if (is_array($edits) && $edits !== []) {
+            $ops = [];
+            foreach ($edits as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $ops[] = [
+                    'old' => (string) ($row['old'] ?? $row['find'] ?? ''),
+                    'new' => (string) ($row['new'] ?? $row['replace'] ?? ''),
+                    'replace_all' => self::truthy($row['replace_all'] ?? false),
+                ];
+            }
+
+            return $ops;
+        }
+        $old = (string) ($args['old'] ?? $args['find'] ?? '');
+        if ($old === '') {
+            return [];
+        }
+
+        return [[
+            'old' => $old,
+            'new' => (string) ($args['new'] ?? $args['replace'] ?? ''),
+            'replace_all' => self::truthy($args['replace_all'] ?? false),
+        ]];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function editHints(string $contents, string $old): array
+    {
+        $needle = trim($old);
+        if ($needle === '') {
+            return [];
+        }
+        if (strlen($needle) > 24) {
+            $needle = substr($needle, 0, 24);
+        }
+        $hints = [];
+        foreach (explode("\n", $contents) as $i => $line) {
+            if (!str_contains($line, $needle) && stripos($line, $needle) === false) {
+                continue;
+            }
+            $hints[] = ($i + 1) . ': ' . mb_substr(trim($line), 0, 120);
+            if (count($hints) >= 5) {
+                break;
+            }
+        }
+
+        return $hints;
+    }
+
+    private function readStagingText(string $path): ?string
+    {
+        try {
+            $real = $this->pathGuard->resolveExisting($path);
+        } catch (PathGuardException) {
+            return null;
+        }
+        if (!is_file($real) || $this->pathGuard->isBinaryExtension($real)) {
+            return null;
+        }
+        $contents = (string) file_get_contents($real);
+        if ($this->pathGuard->detectBinaryMagic($contents)) {
+            return null;
+        }
+
+        return $contents;
+    }
+
+    private static function numbered(string $contents): string
+    {
+        $lines = preg_split("/\r\n|\n|\r/", $contents) ?: [];
+        $width = max(1, strlen((string) count($lines)));
+        $out = [];
+        foreach ($lines as $i => $line) {
+            $out[] = str_pad((string) ($i + 1), $width, ' ', STR_PAD_LEFT) . '| ' . $line;
+        }
+
+        return implode("\n", $out);
     }
 
     private static function replaceFirst(string $haystack, string $needle, string $replace): string

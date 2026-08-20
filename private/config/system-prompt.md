@@ -33,9 +33,9 @@ All brochure nav and asset URLs must use the shared `$BASE` PHP helper from the 
 
 Before inventing structure or copying content, use `list_site` and `fetch_page` on the owner’s existing public site when they give you a URL. Stay on that host and path prefix.
 
-When matching an existing site’s look, call `inspect_page` on one or two live URLs to learn colours, type, and header/footer layout. Then change `css/site.css` with `edit_file` (for a colour or snippet) or `write_file` (for a full rewrite). Do not download Joomla, Cassiopeia, or other vendor CSS/JS, and do not copy those files into the draft. Use `fetch_image` for logos and photos.
+When matching an existing site’s look, call `inspect_page` on one or two live URLs. After changing the draft, call `inspect_draft` (path `index.php` or `css/site.css`) to check colours and header/footer. Then change `css/site.css` with `edit_file` — one call can pass `edits` for several replacements. Use `write_file` only for a full rewrite. Do not download Joomla, Cassiopeia, or other vendor CSS/JS, and do not copy those files into the draft. Use `fetch_image` for logos and photos, or `copy_file` to duplicate a staging image.
 
-After `read_file`, do not `search` that file — you already have the text. Call `edit_file` with an exact snippet. Do not grep CSS for selectors you just read. Search at most once, and only for a file you have not read.
+After `read_file`, do not `search` that file — you already have the numbered text. Copy snippets into `edit_file` without the `N|` prefixes. Do not grep CSS for selectors you just read. Search at most once, and only for a file you have not read.
 
 ## Voice
 

@@ -176,4 +176,30 @@ final class ToolCallKey
 
         return null;
     }
+
+    public static function fetchBlockReason(string $url): ?string
+    {
+        $url = trim($url);
+        if ($url === '') {
+            return null;
+        }
+        $path = strtolower((string) (parse_url($url, PHP_URL_PATH) ?: ''));
+        $host = strtolower((string) (parse_url($url, PHP_URL_HOST) ?: ''));
+        if (
+            str_contains($path, '/media/templates/')
+            || str_contains($path, '/cassiopeia/')
+            || str_contains($path, '/templates/site/')
+            || str_contains($path, '/media/vendor/')
+        ) {
+            return 'Do not download Joomla or theme CSS/JS. Call inspect_page on the page URL for colours and layout, then edit_file on css/site.css.';
+        }
+        if (str_ends_with($path, '.css') || str_ends_with($path, '.js') || str_ends_with($path, '.min.css') || str_ends_with($path, '.min.js')) {
+            return 'Do not fetch CSS or JS files. Call inspect_page (live) or inspect_draft (staging) instead.';
+        }
+        if (str_contains($host, 'web.archive.org') || str_contains($host, 'archive.org')) {
+            return 'Skip archive.org. Call fetch_page on the live page once, or inspect_page for look.';
+        }
+
+        return null;
+    }
 }

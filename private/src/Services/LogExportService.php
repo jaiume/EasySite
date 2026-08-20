@@ -7,7 +7,6 @@ namespace App\Services;
 use App\Support\Config;
 use App\Support\SecretRedactor;
 use App\Support\TimeBudget;
-use App\Support\ZipStore;
 
 final class LogExportService
 {
@@ -47,54 +46,67 @@ final class LogExportService
     public function build(): array
     {
         $stamp = date('Y-m-d-His');
-        $zip = new ZipStore();
+        $filename = 'cp-logs-' . $stamp . '.json';
         $included = [];
         $missing = [];
-
-        $env = $this->environment();
-        $zip->add('environment.json', $this->json($env));
-        $included[] = 'environment.json';
+        $truncated = [];
 
         $iniPath = $this->config->baseDir() . '/config/config.ini';
+        $configIni = null;
         if (is_readable($iniPath)) {
-            $zip->add('config.redacted.ini', SecretRedactor::text((string) file_get_contents($iniPath)));
-            $included[] = 'config.redacted.ini';
+            $configIni = SecretRedactor::text((string) file_get_contents($iniPath));
+            $included[] = 'config_ini';
         } else {
-            $missing[] = 'config.ini';
+            $missing[] = 'config_ini';
         }
 
+        $sections = [];
         foreach ($this->sources() as $source) {
             if (!is_readable($source['path'])) {
-                $missing[] = $source['zip'];
+                $missing[] = $source['key'];
+                $sections[$source['key']] = null;
                 continue;
             }
-            $body = $this->readCapped($source['path']);
-            $zip->add($source['zip'], SecretRedactor::text($body), (int) (@filemtime($source['path']) ?: time()));
-            $included[] = $source['zip'];
+            $raw = SecretRedactor::text($this->readCapped($source['path']));
+            $wasTruncated = str_starts_with($raw, '[truncated;');
+            if ($wasTruncated) {
+                $truncated[] = $source['key'];
+                $nl = strpos($raw, "\n");
+                $raw = $nl === false ? '' : substr($raw, $nl + 1);
+            }
+            $sections[$source['key']] = $this->decodeSection($source['kind'], $raw);
+            $included[] = $source['key'];
         }
 
-        $runs = $this->runListing();
-        $zip->add('runs.json', $this->json($runs));
-        $included[] = 'runs.json';
-
-        $manifest = [
+        $payload = [
             'generated_at' => date('c'),
-            'filename' => 'cp-logs-' . $stamp . '.zip',
+            'filename' => $filename,
+            'note' => 'API key, passwords, and bearer tokens were removed. Attach this JSON when reporting a problem.',
             'included' => $included,
             'missing' => $missing,
-            'note' => 'API key, passwords, and bearer tokens were removed. Attach this zip when reporting a problem.',
+            'truncated' => $truncated,
+            'environment' => $this->environment(),
+            'config_ini' => $configIni,
+            'tools' => $sections['tools'] ?? null,
+            'spend' => $sections['spend'] ?? null,
+            'app_log' => $sections['app_log'] ?? null,
+            'chat' => $sections['chat'] ?? null,
+            'pending' => $sections['pending'] ?? null,
+            'runtime_timeouts' => $sections['runtime_timeouts'] ?? null,
+            'runs' => $this->runListing(),
         ];
-        $zip->add('README.txt', $this->readme($manifest));
-        $zip->add('manifest.json', $this->json($manifest));
+        $included[] = 'environment';
+        $included[] = 'runs';
+        $payload['included'] = array_values(array_unique($included));
 
         return [
-            'filename' => 'cp-logs-' . $stamp . '.zip',
-            'bytes' => $zip->bytes(),
+            'filename' => $filename,
+            'bytes' => $this->json($payload),
         ];
     }
 
     /**
-     * @return list<array{label: string, zip: string, path: string}>
+     * @return list<array{label: string, key: string, kind: string, path: string}>
      */
     private function sources(): array
     {
@@ -103,32 +115,38 @@ final class LogExportService
         return [
             [
                 'label' => 'Tool log',
-                'zip' => 'logs/tools.jsonl',
+                'key' => 'tools',
+                'kind' => 'jsonl',
                 'path' => $this->config->resolveVarPath($this->config->string('logging.tool_log', 'var/data/logs/tools.jsonl')),
             ],
             [
                 'label' => 'Spend log',
-                'zip' => 'logs/spend.jsonl',
+                'key' => 'spend',
+                'kind' => 'jsonl',
                 'path' => $this->config->resolveVarPath($this->config->string('logging.spend_log', 'var/data/logs/spend.jsonl')),
             ],
             [
                 'label' => 'App errors',
-                'zip' => 'logs/app.log',
+                'key' => 'app_log',
+                'kind' => 'text',
                 'path' => $this->config->resolveVarPath($this->config->string('logging.app_log', 'var/data/logs/app.log')),
             ],
             [
                 'label' => 'Current chat',
-                'zip' => 'chats/current.json',
+                'key' => 'chat',
+                'kind' => 'json',
                 'path' => $base . '/var/data/chats/current.json',
             ],
             [
                 'label' => 'Pending turn',
-                'zip' => 'chats/pending.json',
+                'key' => 'pending',
+                'kind' => 'json',
                 'path' => $base . '/var/data/chats/pending.json',
             ],
             [
                 'label' => 'Runtime timeouts',
-                'zip' => 'runtime-timeouts.json',
+                'key' => 'runtime_timeouts',
+                'kind' => 'json',
                 'path' => $base . '/var/data/runtime-timeouts.json',
             ],
         ];
@@ -207,6 +225,29 @@ final class LogExportService
         return $out;
     }
 
+    private function decodeSection(string $kind, string $raw): mixed
+    {
+        if ($kind === 'text') {
+            return $raw;
+        }
+        if ($kind === 'jsonl') {
+            $rows = [];
+            foreach (preg_split("/\r\n|\n|\r/", $raw) ?: [] as $line) {
+                $line = trim($line);
+                if ($line === '') {
+                    continue;
+                }
+                $row = json_decode($line, true);
+                $rows[] = is_array($row) ? $row : $line;
+            }
+
+            return $rows;
+        }
+        $decoded = json_decode($raw, true);
+
+        return $decoded !== null || $raw === '' || $raw === 'null' ? $decoded : $raw;
+    }
+
     private function readCapped(string $path): string
     {
         $size = @filesize($path);
@@ -242,33 +283,6 @@ final class LogExportService
     private function json(array $data): string
     {
         return (string) json_encode($data, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT | JSON_INVALID_UTF8_SUBSTITUTE);
-    }
-
-    /**
-     * @param array{generated_at: string, filename: string, included: list<string>, missing: list<string>, note: string} $manifest
-     */
-    private function readme(array $manifest): string
-    {
-        $lines = [
-            'Tash Inc site editor diagnostic export',
-            'Generated: ' . $manifest['generated_at'],
-            '',
-            $manifest['note'],
-            '',
-            'Included:',
-        ];
-        foreach ($manifest['included'] as $name) {
-            $lines[] = '- ' . $name;
-        }
-        if ($manifest['missing'] !== []) {
-            $lines[] = '';
-            $lines[] = 'Not present on this host:';
-            foreach ($manifest['missing'] as $name) {
-                $lines[] = '- ' . $name;
-            }
-        }
-
-        return implode("\n", $lines) . "\n";
     }
 
     private function humanSize(int $bytes): string

@@ -55,7 +55,7 @@ final class SettingsController
         $download->getBody()->write($bundle['bytes']);
 
         return $download
-            ->withHeader('Content-Type', 'application/zip')
+            ->withHeader('Content-Type', 'application/json; charset=utf-8')
             ->withHeader('Content-Disposition', 'attachment; filename="' . $bundle['filename'] . '"')
             ->withHeader('Content-Length', (string) strlen($bundle['bytes']))
             ->withHeader('Cache-Control', 'no-store');

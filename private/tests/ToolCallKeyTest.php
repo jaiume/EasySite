@@ -150,4 +150,23 @@ final class ToolCallKeyTest extends TestCase
         self::assertSame(0, $usage['searches']);
         self::assertNull(ToolCallKey::searchBlockReason(['path' => 'about.php', 'query' => 'h1'], $usage));
     }
+
+    public function testFetchBlocksVendorCss(): void
+    {
+        $reason = ToolCallKey::fetchBlockReason('https://tashincconsulting.com/media/templates/site/cassiopeia/css/user.css');
+        self::assertNotNull($reason);
+        self::assertStringContainsString('inspect_page', $reason);
+    }
+
+    public function testFetchBlocksArchiveHost(): void
+    {
+        $reason = ToolCallKey::fetchBlockReason('https://web.archive.org/web/2024/https://tashincconsulting.com/index.php/testimonials');
+        self::assertNotNull($reason);
+        self::assertStringContainsString('archive', $reason);
+    }
+
+    public function testFetchAllowsHtmlPage(): void
+    {
+        self::assertNull(ToolCallKey::fetchBlockReason('https://tashincconsulting.com/index.php/about'));
+    }
 }

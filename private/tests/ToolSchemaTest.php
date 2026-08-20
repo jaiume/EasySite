@@ -19,6 +19,8 @@ final class ToolSchemaTest extends TestCase
         self::assertStringContainsString('"name":"list_inbox"', $json);
         $this->assertStringContainsString('"name":"edit_file"', $json);
         $this->assertStringContainsString('"name":"inspect_page"', $json);
+        $this->assertStringContainsString('"name":"inspect_draft"', $json);
+        $this->assertStringContainsString('"name":"copy_file"', $json);
         $this->assertStringContainsString('"properties":{}', $json);
         $this->assertStringNotContainsString('"properties":[]', $json);
     }

@@ -326,8 +326,11 @@ final class AgentLoopService
             $public = $this->publicArgs($name, $args);
             $path = ToolCallKey::normalizePath((string) ($args['path'] ?? '.'));
             $skipSearch = $name === 'search' ? ToolCallKey::searchBlockReason($args, $usage) : null;
+            $skipFetch = $name === 'fetch_page' ? ToolCallKey::fetchBlockReason((string) ($args['url'] ?? '')) : null;
             if ($skipSearch !== null) {
                 $result = ServiceResult::ok($skipSearch, ['skipped' => true]);
+            } elseif ($skipFetch !== null) {
+                $result = ServiceResult::ok($skipFetch, ['skipped' => true]);
             } elseif (isset($seen[$fp])) {
                 $result = ServiceResult::ok(
                     'Already ran this exact tool call. Use that earlier result. Do not repeat it. If you are changing a file, call edit_file now.',
@@ -606,23 +609,35 @@ final class AgentLoopService
     public function toolDefinitions(): array
     {
         return [
-            $this->fn('list_dir', 'List files in one staging folder.', [
+            $this->fn('list_dir', 'List files in one staging folder. Default depth 2.', [
                 'path' => ['type' => 'string', 'description' => 'Relative path under staging. Default .'],
-                'depth' => ['type' => 'integer', 'description' => 'Depth, default 1'],
+                'depth' => ['type' => 'integer', 'description' => 'Depth, default 2'],
             ]),
-            $this->fn('read_file', 'Read a text file under staging. Binaries return name/size only.', [
+            $this->fn('read_file', 'Read a text file under staging. Lines are numbered (N|). Those prefixes are not in the file. Binaries return name/size only — use copy_file to duplicate them.', [
                 'path' => ['type' => 'string'],
             ], ['path']),
             $this->fn('write_file', 'Replace a whole text file under staging. Not for images. Prefer edit_file for a small change.', [
                 'path' => ['type' => 'string'],
                 'content' => ['type' => 'string'],
             ], ['path', 'content']),
-            $this->fn('edit_file', 'Replace exact text in a staging file. Use replace_all true to change every match (for example a colour). Prefer this over rewriting the whole file.', [
+            $this->fn('edit_file', 'Replace exact text in a staging file. Use replace_all true to change every match. Pass edits: [{old, new, replace_all}] to apply several replacements in one call. Prefer this over rewriting the whole file.', [
                 'path' => ['type' => 'string'],
-                'old' => ['type' => 'string', 'description' => 'Exact text to find'],
+                'old' => ['type' => 'string', 'description' => 'Exact text to find (no line-number prefixes)'],
                 'new' => ['type' => 'string', 'description' => 'Replacement text'],
                 'replace_all' => ['type' => 'boolean', 'description' => 'Replace every match. Default false (fails if old matches more than once).'],
-            ], ['path', 'old', 'new']),
+                'edits' => [
+                    'type' => 'array',
+                    'description' => 'Several {old, new, replace_all} replacements applied in order',
+                    'items' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'old' => ['type' => 'string'],
+                            'new' => ['type' => 'string'],
+                            'replace_all' => ['type' => 'boolean'],
+                        ],
+                    ],
+                ],
+            ], ['path']),
             $this->fn('search', 'Find text only in files you have not already read. Prefer read_file then edit_file. Do not search the same file twice.', [
                 'query' => ['type' => 'string', 'description' => 'Literal text, or several literals separated by |'],
                 'path' => ['type' => 'string'],
@@ -630,6 +645,10 @@ final class AgentLoopService
             $this->fn('mkdir', 'Create a directory under staging.', [
                 'path' => ['type' => 'string'],
             ], ['path']),
+            $this->fn('copy_file', 'Copy a staging file to a new staging path. Works for images and text. Parent folder must already exist.', [
+                'from' => ['type' => 'string'],
+                'to' => ['type' => 'string'],
+            ], ['from', 'to']),
             $this->fn('rename', 'Rename a staging file or folder.', [
                 'from' => ['type' => 'string'],
                 'to' => ['type' => 'string'],
@@ -637,12 +656,15 @@ final class AgentLoopService
             $this->fn('delete', 'Delete a staging file or folder.', [
                 'path' => ['type' => 'string'],
             ], ['path']),
-            $this->fn('fetch_page', 'GET one public https HTML page and return title plus extracted text. CSS/JS URLs return a short excerpt only. Images must use fetch_image. For colours and layout use inspect_page.', [
+            $this->fn('fetch_page', 'GET one public https HTML page and return title plus extracted text. Not for CSS/JS or Joomla theme files. Images must use fetch_image. For colours and layout use inspect_page (live) or inspect_draft (staging).', [
                 'url' => ['type' => 'string'],
             ], ['url']),
             $this->fn('inspect_page', 'Learn colours, fonts, and header/footer layout from a public https page. Does not copy vendor CSS. Use this instead of downloading Joomla or theme stylesheets.', [
                 'url' => ['type' => 'string'],
             ], ['url']),
+            $this->fn('inspect_draft', 'Learn colours, fonts, and header/footer layout from the staging draft (local files). Use after edits to check the draft look. path is a page such as index.php, or css/site.css.', [
+                'path' => ['type' => 'string', 'description' => 'Staging page, default index.php'],
+            ]),
             $this->fn('list_site', 'Crawl https URLs under the same host and path prefix.', [
                 'url' => ['type' => 'string'],
                 'depth' => ['type' => 'integer'],
@@ -680,10 +702,12 @@ final class AgentLoopService
             'edit_file' => $this->files->editFile($args),
             'search' => $this->files->search($args),
             'mkdir' => $this->files->mkdir($args),
+            'copy_file' => $this->files->copyFile($args),
             'rename' => $this->files->rename($args),
             'delete' => $this->files->delete($args),
             'fetch_page' => $this->http->fetchPage($args),
             'inspect_page' => $this->http->inspectPage($args),
+            'inspect_draft' => $this->files->inspectDraft($args),
             'list_site' => $this->http->listSite($args),
             'fetch_image' => $this->http->fetchImage($args),
             'generate_image' => $this->images->generateImage($args, $imageModel),

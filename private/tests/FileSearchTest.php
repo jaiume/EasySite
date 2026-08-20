@@ -140,6 +140,62 @@ INI;
         self::assertSame('NOT_FOUND', $result['error']['code'] ?? null);
     }
 
+    public function testEditFileMultipleEdits(): void
+    {
+        file_put_contents($this->root . '/public_html/staging/css/site.css', ".a{color:#0d6b4c}\n.b{gap:0.5rem}\n");
+        $result = $this->files->editFile([
+            'path' => 'css/site.css',
+            'edits' => [
+                ['old' => '#0d6b4c', 'new' => '#c2185b'],
+                ['old' => 'gap:0.5rem', 'new' => 'gap:1.25rem'],
+            ],
+        ]);
+        self::assertTrue($result['success'], $result['message']);
+        self::assertSame(2, $result['data']['replacements'] ?? null);
+        $css = (string) file_get_contents($this->root . '/public_html/staging/css/site.css');
+        self::assertStringContainsString('#c2185b', $css);
+        self::assertStringContainsString('gap:1.25rem', $css);
+    }
+
+    public function testReadFileNumbersLines(): void
+    {
+        $result = $this->files->readFile(['path' => 'css/site.css']);
+        self::assertTrue($result['success'], $result['message']);
+        $content = (string) ($result['data']['content'] ?? '');
+        self::assertStringContainsString('1| ', $content);
+        self::assertStringNotContainsString('1| 1|', $content);
+        $onDisk = (string) file_get_contents($this->root . '/public_html/staging/css/site.css');
+        self::assertStringNotContainsString('1|', $onDisk);
+    }
+
+    public function testCopyFileDuplicatesImage(): void
+    {
+        mkdir($this->root . '/public_html/staging/images', 0777, true);
+        $png = "\x89PNG\r\n\x1a\n" . str_repeat('x', 24);
+        file_put_contents($this->root . '/public_html/staging/images/logo.png', $png);
+        $result = $this->files->copyFile([
+            'from' => 'images/logo.png',
+            'to' => 'images/logo-copy.png',
+        ]);
+        self::assertTrue($result['success'], $result['message']);
+        self::assertFileExists($this->root . '/public_html/staging/images/logo-copy.png');
+        self::assertSame($png, (string) file_get_contents($this->root . '/public_html/staging/images/logo-copy.png'));
+    }
+
+    public function testInspectDraftReadsLocalCssAndHeader(): void
+    {
+        file_put_contents($this->root . '/public_html/staging/index.php', '<main>Hello</main>');
+        file_put_contents(
+            $this->root . '/public_html/staging/includes/header.php',
+            '<header class="site-header"><a href="/">Home</a></header>'
+        );
+        $result = $this->files->inspectDraft(['path' => 'index.php']);
+        self::assertTrue($result['success'], $result['message']);
+        self::assertContains('#0d6b4c', $result['data']['colours'] ?? []);
+        self::assertSame('header', $result['data']['header']['tag'] ?? null);
+        self::assertStringContainsString('staging', (string) ($result['data']['note'] ?? ''));
+    }
+
     private function rm(string $dir): void
     {
         if (!is_dir($dir)) {
