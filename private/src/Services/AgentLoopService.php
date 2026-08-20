@@ -38,7 +38,7 @@ final class AgentLoopService
     /**
      * @param callable(string, array<string, mixed>): void $emit
      */
-    public function run(string $userMessage, string $chatModel, string $imageModel, string $runId, callable $emit, string $previewPath = '', string $composer = ''): void
+    public function run(string $userMessage, string $chatModel, string $imageModel, string $runId, callable $emit, string $previewPath = '', string $composer = '', string $highlightPrompt = ''): void
     {
         if (!$this->catalog->isAllowedChatModel($chatModel)) {
             $emit('error', ['message' => 'Chat model is not allowed.']);
@@ -71,10 +71,11 @@ final class AgentLoopService
         $this->chats->save($history);
         $emit('user', ['id' => $messageId]);
         $modelHistory = $this->modelMessages($history);
-        if ($previewPath !== '' && $modelHistory !== []) {
+        $contextPrefix = $this->previewPrefix($previewPath, $highlightPrompt);
+        if ($contextPrefix !== '' && $modelHistory !== []) {
             $last = count($modelHistory) - 1;
             if ($modelHistory[$last]['role'] === 'user') {
-                $modelHistory[$last]['content'] = $this->previewPrefix($previewPath) . $modelHistory[$last]['content'];
+                $modelHistory[$last]['content'] = $contextPrefix . $modelHistory[$last]['content'];
             }
         }
         $messages = array_merge(
@@ -818,9 +819,20 @@ final class AgentLoopService
         return $out;
     }
 
-    private function previewPrefix(string $previewPath): string
+    private function previewPrefix(string $previewPath, string $highlightPrompt = ''): string
     {
-        return "The owner is currently looking at this draft page in the preview: {$previewPath}\n"
-            . "If they say \"this page\", \"here\", or similar, they mean that file unless they name another.\n\n";
+        $parts = [];
+        if ($previewPath !== '') {
+            $parts[] = "The owner is currently looking at this draft page in the preview: {$previewPath}\n"
+                . "If they say \"this page\", \"here\", or similar, they mean that file unless they name another.";
+        }
+        if ($highlightPrompt !== '') {
+            $parts[] = $highlightPrompt;
+        }
+        if ($parts === []) {
+            return '';
+        }
+
+        return implode("\n\n", $parts) . "\n\n";
     }
 }

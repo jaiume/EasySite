@@ -46,6 +46,7 @@ html, body {
     display: flex;
     justify-content: center;
     overflow: hidden;
+    position: relative;
 }
 .preview-frame {
     height: 100%;
@@ -62,6 +63,34 @@ html, body {
     width: 390px;
     max-width: 100%;
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+.preview-highlight-layer {
+    position: absolute;
+    z-index: 3;
+    overflow: hidden;
+    pointer-events: none;
+}
+.preview-highlight-layer.is-drawing {
+    pointer-events: auto;
+    cursor: crosshair;
+    background: rgba(13, 110, 253, 0.06);
+    user-select: none;
+    touch-action: none;
+}
+.preview-highlight-box {
+    position: absolute;
+    box-sizing: border-box;
+    border: 2px solid #0d6efd;
+    background: rgba(13, 110, 253, 0.14);
+    box-shadow: 0 0 0 9999px rgba(33, 37, 41, 0.28);
+    pointer-events: none;
+}
+.chat-chip-highlight {
+    padding: 0.2rem 0.4rem;
+}
+.chat-chip-highlight .bi {
+    font-size: 0.85rem;
+    color: #0d6efd;
 }
 .cp-split-handle {
     flex: 0 0 6px;

@@ -54,10 +54,16 @@
                 <button type="button" class="btn btn-sm btn-outline-secondary" id="preview-hard-reload" title="Hard reload (bypass cache)" aria-label="Hard reload">
                     <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
                 </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="preview-highlight" title="Highlight an area" aria-label="Highlight an area" aria-pressed="false">
+                    <i class="bi bi-bounding-box" aria-hidden="true"></i>
+                </button>
                 <input id="preview-path" class="form-control form-control-sm preview-path" type="text" value="/" spellcheck="false" autocomplete="off" title="Current preview page" aria-label="Current preview page">
             </div>
             <div class="preview-stage">
                 <iframe id="staging-frame" title="Staging preview" src="{{ staging_url }}" class="preview-frame"></iframe>
+                <div id="preview-highlight-layer" class="preview-highlight-layer" hidden>
+                    <div id="preview-highlight-box" class="preview-highlight-box" hidden></div>
+                </div>
             </div>
         </div>
     </div>

@@ -10,6 +10,7 @@ use App\Services\AgentLoopService;
 use App\Services\AttachmentService;
 use App\Services\ConversationService;
 use App\Support\Config;
+use App\Support\PreviewHighlight;
 use App\Support\TimeBudget;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -59,13 +60,19 @@ final class ChatController
             $message = $prefix === '' ? $message : $prefix . ($message !== '' ? "\n\n" . $message : '');
         }
         $previewPath = $this->previewPath(is_array($body) ? (string) ($body['preview_path'] ?? '') : '');
+        $highlight = PreviewHighlight::fromRequest(is_array($body) ? ($body['highlight'] ?? null) : null);
+        if ($highlight !== null) {
+            $highlightPath = $this->previewPath($highlight['path']);
+            $highlight['path'] = $highlightPath !== '' ? $highlightPath : $previewPath;
+        }
+        $highlightPrompt = $highlight !== null ? PreviewHighlight::prompt($highlight) : '';
         $chatModel = $this->config->string('openrouter.default_chat_model');
         $imageModel = $this->config->string('openrouter.default_image_model');
         $resume = !empty($body['continue']);
-        if (!$resume && $message === '') {
+        if (!$resume && $message === '' && $highlightPrompt === '') {
             $response->getBody()->write(json_encode([
                 'success' => false,
-                'message' => 'Type a message or attach a file.',
+                'message' => 'Type a message, attach a file, or highlight an area in the preview.',
                 'data' => null,
                 'error' => ['code' => 'VALIDATION_ERROR', 'details' => []],
             ]));
@@ -106,7 +113,10 @@ final class ChatController
             if ($resume) {
                 $this->loop->resume($chatModel, $imageModel, $runId, $emit);
             } else {
-                $this->loop->run($message, $chatModel, $imageModel, $runId, $emit, $previewPath, $typed);
+                if ($message === '' && $highlightPrompt !== '') {
+                    $message = 'Highlighted an area in the preview.';
+                }
+                $this->loop->run($message, $chatModel, $imageModel, $runId, $emit, $previewPath, $typed, $highlightPrompt);
             }
         } finally {
             $this->runs->finish($runId);

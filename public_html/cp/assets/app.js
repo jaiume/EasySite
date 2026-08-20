@@ -14,6 +14,7 @@
     let runId = null;
     let abort = null;
     let attachments = [];
+    let previewHighlight = null;
     let pendingRestoreId = null;
     let autoLooping = false;
     let autoStop = false;
@@ -542,11 +543,40 @@
 
     function renderChips() {
         chipBox.innerHTML = "";
-        if (attachments.length === 0) {
+        const hasHighlight = previewHighlight !== null;
+        if (attachments.length === 0 && !hasHighlight) {
             chipBox.hidden = true;
             return;
         }
         chipBox.hidden = false;
+        if (hasHighlight) {
+            const chip = document.createElement("span");
+            chip.className = "badge text-bg-light border chat-chip chat-chip-highlight";
+            const path = previewHighlight.path || "/";
+            chip.title = "Highlighted area on " + path;
+            const icon = document.createElement("i");
+            icon.className = "bi bi-bounding-box";
+            icon.setAttribute("aria-hidden", "true");
+            const name = document.createElement("span");
+            name.className = "chat-chip-name";
+            name.textContent = "Highlight";
+            const remove = document.createElement("button");
+            remove.type = "button";
+            remove.className = "btn-close btn-close-sm";
+            remove.setAttribute("aria-label", "Remove highlight");
+            remove.addEventListener("click", function () {
+                if (window.CP.clearPreviewHighlight) {
+                    window.CP.clearPreviewHighlight();
+                } else {
+                    previewHighlight = null;
+                    renderChips();
+                }
+            });
+            chip.appendChild(icon);
+            chip.appendChild(name);
+            chip.appendChild(remove);
+            chipBox.appendChild(chip);
+        }
         attachments.forEach(function (item, index) {
             const chip = document.createElement("span");
             chip.className = "badge text-bg-light border chat-chip";
@@ -655,6 +685,344 @@
             attachFiles(files);
         }
     });
+
+    (function initPreviewHighlight() {
+        const btn = document.getElementById("preview-highlight");
+        const layer = document.getElementById("preview-highlight-layer");
+        const boxEl = document.getElementById("preview-highlight-box");
+        const stage = document.querySelector(".preview-stage");
+        if (!btn || !layer || !boxEl || !stage || !frame) {
+            return;
+        }
+        let drawing = false;
+        let drag = null;
+        let lastHighlightPath = "";
+        const skipTags = { HTML: 1, HEAD: 1, BODY: 1, SCRIPT: 1, STYLE: 1, LINK: 1, META: 1, NOSCRIPT: 1, BR: 1, WBR: 1 };
+
+        function frameWin() {
+            try {
+                const win = frame.contentWindow;
+                if (!win || win.location.origin !== window.location.origin) {
+                    return null;
+                }
+                return win;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function placeLayer() {
+            const stageRect = stage.getBoundingClientRect();
+            const frameRect = frame.getBoundingClientRect();
+            layer.style.left = (frameRect.left - stageRect.left) + "px";
+            layer.style.top = (frameRect.top - stageRect.top) + "px";
+            layer.style.width = Math.max(0, frameRect.width) + "px";
+            layer.style.height = Math.max(0, frameRect.height) + "px";
+        }
+
+        function layerSize() {
+            return {
+                width: Math.max(1, layer.clientWidth || frame.clientWidth || 1),
+                height: Math.max(1, layer.clientHeight || frame.clientHeight || 1),
+            };
+        }
+
+        function showBox(box, win) {
+            if (!box || !win) {
+                boxEl.hidden = true;
+                return;
+            }
+            const size = layerSize();
+            const sx = size.width / Math.max(1, win.innerWidth);
+            const sy = size.height / Math.max(1, win.innerHeight);
+            boxEl.style.left = ((box.x - win.scrollX) * sx) + "px";
+            boxEl.style.top = ((box.y - win.scrollY) * sy) + "px";
+            boxEl.style.width = (box.width * sx) + "px";
+            boxEl.style.height = (box.height * sy) + "px";
+            boxEl.hidden = false;
+        }
+
+        function refreshLayer() {
+            const win = frameWin();
+            const show = drawing || previewHighlight !== null;
+            layer.hidden = !show;
+            if (show) {
+                placeLayer();
+            }
+            layer.classList.toggle("is-drawing", drawing);
+            btn.classList.toggle("btn-secondary", drawing);
+            btn.classList.toggle("btn-outline-secondary", !drawing);
+            btn.setAttribute("aria-pressed", drawing ? "true" : "false");
+            btn.title = drawing
+                ? "Drag on the preview to draw a box. Escape cancels."
+                : "Highlight an area";
+            if (drag && win) {
+                showBox(toDocBox(drag.x1, drag.y1, drag.x2, drag.y2, win), win);
+            } else if (previewHighlight && win) {
+                showBox(previewHighlight.box, win);
+            } else if (!drawing) {
+                boxEl.hidden = true;
+            }
+        }
+
+        function setHighlight(value) {
+            previewHighlight = value;
+            drag = null;
+            drawing = false;
+            if (value && value.path) {
+                lastHighlightPath = value.path;
+            }
+            refreshLayer();
+            renderChips();
+        }
+
+        window.CP.clearPreviewHighlight = function () {
+            setHighlight(null);
+        };
+
+        function layerPoint(event) {
+            const rect = layer.getBoundingClientRect();
+            return {
+                x: event.clientX - rect.left,
+                y: event.clientY - rect.top,
+            };
+        }
+
+        function toDocBox(x1, y1, x2, y2, win) {
+            const size = layerSize();
+            const sx = win.innerWidth / size.width;
+            const sy = win.innerHeight / size.height;
+            return {
+                x: Math.round(Math.min(x1, x2) * sx + win.scrollX),
+                y: Math.round(Math.min(y1, y2) * sy + win.scrollY),
+                width: Math.round(Math.abs(x2 - x1) * sx),
+                height: Math.round(Math.abs(y2 - y1) * sy),
+            };
+        }
+
+        function ident(value) {
+            const text = String(value || "");
+            if (window.CSS && CSS.escape) {
+                return CSS.escape(text);
+            }
+            return text.replace(/[^A-Za-z0-9_-]/g, "\\$&");
+        }
+
+        function cssPath(el, doc) {
+            if (!el || el.nodeType !== 1) {
+                return "";
+            }
+            if (el.id && doc.getElementById(el.id) === el) {
+                return "#" + ident(el.id);
+            }
+            const parts = [];
+            let node = el;
+            while (node && node.nodeType === 1 && node !== doc.documentElement && parts.length < 5) {
+                let sel = node.tagName.toLowerCase();
+                if (node.id) {
+                    parts.unshift("#" + ident(node.id));
+                    break;
+                }
+                const cls = (typeof node.className === "string" ? node.className : "").trim().split(/\s+/).filter(Boolean).slice(0, 2);
+                if (cls.length) {
+                    sel += cls.map(function (name) { return "." + ident(name); }).join("");
+                }
+                const parent = node.parentElement;
+                if (parent) {
+                    const same = Array.prototype.filter.call(parent.children, function (child) {
+                        return child.tagName === node.tagName;
+                    });
+                    if (same.length > 1) {
+                        sel += ":nth-of-type(" + (Array.prototype.indexOf.call(same, node) + 1) + ")";
+                    }
+                }
+                parts.unshift(sel);
+                node = parent;
+            }
+            return parts.join(" > ");
+        }
+
+        function relAttr(val, doc) {
+            if (!val) {
+                return "";
+            }
+            try {
+                const url = new URL(val, doc.baseURI);
+                if (url.protocol === "javascript:") {
+                    return "";
+                }
+                let path = url.pathname || "";
+                if (path.indexOf("/staging/") === 0) {
+                    path = path.slice("/staging/".length);
+                }
+                path = path.replace(/^\//, "");
+                url.searchParams.delete("_cp");
+                const qs = url.searchParams.toString();
+                return path + (qs ? "?" + qs : "") + (url.hash || "");
+            } catch (e) {
+                return "";
+            }
+        }
+
+        function clipText(text, max) {
+            text = String(text || "").replace(/\s+/g, " ").trim();
+            if (text.length <= max) {
+                return text;
+            }
+            return text.slice(0, max - 1) + "…";
+        }
+
+        function intersects(el, box, win) {
+            const r = el.getBoundingClientRect();
+            const left = r.left + win.scrollX;
+            const top = r.top + win.scrollY;
+            return left < box.x + box.width && left + r.width > box.x && top < box.y + box.height && top + r.height > box.y;
+        }
+
+        function collectElements(box, win) {
+            const doc = win.document;
+            const seen = {};
+            const out = [];
+            const points = [
+                [box.x + box.width / 2, box.y + box.height / 2],
+                [box.x + 2, box.y + 2],
+                [box.x + box.width - 2, box.y + 2],
+                [box.x + 2, box.y + box.height - 2],
+                [box.x + box.width - 2, box.y + box.height - 2],
+                [box.x + box.width / 2, box.y + 2],
+                [box.x + box.width / 2, box.y + box.height - 2],
+                [box.x + 2, box.y + box.height / 2],
+                [box.x + box.width - 2, box.y + box.height / 2],
+            ];
+            points.forEach(function (pt) {
+                const vx = pt[0] - win.scrollX;
+                const vy = pt[1] - win.scrollY;
+                if (vx < 0 || vy < 0 || vx > win.innerWidth || vy > win.innerHeight) {
+                    return;
+                }
+                let stack = [];
+                try {
+                    stack = doc.elementsFromPoint(vx, vy) || [];
+                } catch (e) {
+                    const one = doc.elementFromPoint(vx, vy);
+                    stack = one ? [one] : [];
+                }
+                stack.forEach(function (el) {
+                    if (!el || el.nodeType !== 1 || skipTags[el.tagName] || !intersects(el, box, win)) {
+                        return;
+                    }
+                    const selector = cssPath(el, doc);
+                    const key = selector || (el.tagName + (el.id || ""));
+                    if (seen[key]) {
+                        return;
+                    }
+                    seen[key] = true;
+                    const className = (typeof el.className === "string" ? el.className : "").trim().split(/\s+/).filter(Boolean).slice(0, 3).join(" ");
+                    out.push({
+                        tag: el.tagName.toLowerCase(),
+                        id: el.id || "",
+                        class: className,
+                        selector: selector,
+                        text: clipText(el.innerText || el.textContent || "", 160),
+                        src: relAttr(el.getAttribute("src") || "", doc),
+                        href: relAttr(el.getAttribute("href") || "", doc),
+                    });
+                });
+            });
+            return out.slice(0, 8);
+        }
+
+        function captureHighlight(box, win) {
+            return {
+                path: window.CP.previewPath ? window.CP.previewPath() : "/",
+                viewport: { width: win.innerWidth, height: win.innerHeight },
+                scroll: { x: Math.round(win.scrollX), y: Math.round(win.scrollY) },
+                box: box,
+                elements: collectElements(box, win),
+            };
+        }
+
+        function bindFrame() {
+            const win = frameWin();
+            if (!win) {
+                return;
+            }
+            win.addEventListener("scroll", refreshLayer, { passive: true });
+            win.addEventListener("resize", refreshLayer);
+        }
+
+        btn.addEventListener("click", function () {
+            drawing = !drawing;
+            drag = null;
+            refreshLayer();
+        });
+        layer.addEventListener("pointerdown", function (event) {
+            if (!drawing) {
+                return;
+            }
+            event.preventDefault();
+            layer.setPointerCapture(event.pointerId);
+            const p = layerPoint(event);
+            drag = { x1: p.x, y1: p.y, x2: p.x, y2: p.y };
+            refreshLayer();
+        });
+        layer.addEventListener("pointermove", function (event) {
+            if (!drag) {
+                return;
+            }
+            const p = layerPoint(event);
+            drag.x2 = p.x;
+            drag.y2 = p.y;
+            refreshLayer();
+        });
+        function finishDrag(event) {
+            if (!drag) {
+                return;
+            }
+            const p = layerPoint(event);
+            drag.x2 = p.x;
+            drag.y2 = p.y;
+            const win = frameWin();
+            const box = win ? toDocBox(drag.x1, drag.y1, drag.x2, drag.y2, win) : null;
+            drag = null;
+            drawing = false;
+            if (!win || !box || box.width < 8 || box.height < 8) {
+                refreshLayer();
+                return;
+            }
+            setHighlight(captureHighlight(box, win));
+        }
+        layer.addEventListener("pointerup", finishDrag);
+        layer.addEventListener("pointercancel", function () {
+            drag = null;
+            drawing = false;
+            refreshLayer();
+        });
+        document.addEventListener("keydown", function (event) {
+            if (event.key === "Escape" && drawing) {
+                drawing = false;
+                drag = null;
+                refreshLayer();
+            }
+        });
+        frame.addEventListener("load", function () {
+            const path = window.CP.previewPath ? window.CP.previewPath() : "";
+            if (previewHighlight && lastHighlightPath && path !== lastHighlightPath) {
+                setHighlight(null);
+            } else {
+                refreshLayer();
+            }
+            lastHighlightPath = path;
+            bindFrame();
+        });
+        if (window.ResizeObserver) {
+            const ro = new ResizeObserver(refreshLayer);
+            ro.observe(stage);
+            ro.observe(frame);
+        }
+        window.addEventListener("resize", refreshLayer);
+        bindFrame();
+    })();
 
     function setActivity(text) {
         activity.textContent = text || "";
@@ -997,15 +1365,24 @@
     form.addEventListener("submit", async function (event) {
         event.preventDefault();
         const message = input.value.trim();
-        if (!message && attachments.length === 0) {
+        const highlight = previewHighlight;
+        if (!message && attachments.length === 0 && !highlight) {
             return;
         }
         const pending = attachments.slice();
         input.value = "";
         attachments.forEach(revokePreview);
         attachments = [];
-        renderChips();
-        const userEl = appendTurn(message || pending.map(function (a) { return a.filename; }).join(", "), "").user;
+        if (window.CP.clearPreviewHighlight) {
+            window.CP.clearPreviewHighlight();
+        } else {
+            previewHighlight = null;
+            renderChips();
+        }
+        const userLabel = message || (pending.length
+            ? pending.map(function (a) { return a.filename; }).join(", ")
+            : "Highlighted an area in the preview");
+        const userEl = appendTurn(userLabel, "").user;
         autoStop = true;
         if (abort) {
             abort.abort();
@@ -1015,11 +1392,15 @@
         }
         autoStop = false;
         removeStopped();
-        await streamChat({
+        const payload = {
             message: message,
             attachments: pending.map(function (a) { return a.path; }),
             preview_path: window.CP.previewPath ? window.CP.previewPath() : "",
-        }, userEl);
+        };
+        if (highlight) {
+            payload.highlight = highlight;
+        }
+        await streamChat(payload, userEl);
     });
 
     function handleSse(chunk, userEl, outcome) {

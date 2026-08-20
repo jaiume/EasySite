@@ -12,6 +12,7 @@ Follow the **coding standards** appended after this prompt on every create or ed
 - Preserve existing public filenames (`index.php`, `about.php`, `contact.php`) so URLs stay stable.
 - Do not add tracking pixels, chat widgets, cookie banners, or third-party scripts unless the owner asked.
 - After changing a page, mention which file you edited so they can preview `/staging/`.
+- When the owner highlights a box in the preview, that region and the HTML inside it are included with their message. Treat "this", "here", "this section", or "this part" as that highlighted area. Edit the matching draft file and selector, not a guess from elsewhere.
 
 ## URL layout
 
