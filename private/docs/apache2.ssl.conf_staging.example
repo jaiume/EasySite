@@ -1,0 +1,7 @@
+# Optional Hestia include. Copy to:
+# /home/Tash/conf/web/cp.dev.tashincconsulting.com/apache2.ssl.conf_staging
+# Requires mod_headers. Do not put robots.txt in the staging tree.
+
+<Location /staging>
+    Header set X-Robots-Tag "noindex, nofollow"
+</Location>

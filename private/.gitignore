@@ -1,0 +1,10 @@
+/vendor/
+/config/config.ini
+/var/cache/*
+/var/logs/*
+/var/data/*
+!/var/cache/.gitkeep
+!/var/logs/.gitkeep
+!/var/data/.gitkeep
+.phpunit.result.cache
+composer.phar

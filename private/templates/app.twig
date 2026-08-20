@@ -1,0 +1,127 @@
+{% extends "layout.twig" %}
+{% block title %}Site editor{% endblock %}
+{% block body %}
+<div class="cp-shell d-flex flex-column">
+    <header class="border-bottom bg-white px-3 py-2">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <strong class="me-2">Site editor</strong>
+            <div class="btn-group btn-group-sm" id="preview-switcher" role="group" aria-label="Preview size">
+                <button type="button" class="btn btn-secondary" data-preview="desktop" title="Desktop" aria-label="Desktop" aria-pressed="true">
+                    <i class="bi bi-display" aria-hidden="true"></i>
+                </button>
+                <button type="button" class="btn btn-outline-secondary" data-preview="tablet" title="Tablet" aria-label="Tablet" aria-pressed="false">
+                    <i class="bi bi-tablet" aria-hidden="true"></i>
+                </button>
+                <button type="button" class="btn btn-outline-secondary" data-preview="phone" title="Mobile" aria-label="Mobile" aria-pressed="false">
+                    <i class="bi bi-phone" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="ms-auto d-flex flex-wrap align-items-center gap-2">
+                <button class="btn btn-sm btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#publishModal">Publish</button>
+                <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#rollbackModal">Rollback</button>
+                {% include "_account_icons.twig" %}
+            </div>
+        </div>
+        {% if flash %}
+            <div class="alert alert-{{ flash.ok ? 'success' : 'danger' }} py-1 px-2 mt-2 mb-0">{{ flash.message }}</div>
+        {% endif %}
+    </header>
+    <div class="cp-split flex-grow-1 overflow-hidden">
+        <div id="chat-pane" class="cp-pane cp-pane-chat d-flex flex-column bg-white">
+            <div id="chat-log" class="flex-grow-1 overflow-auto p-3"></div>
+            <form id="chat-form" class="border-top p-2">
+                <div id="chat-drop" class="chat-drop">
+                    <div id="chat-attachments" class="chat-attachments" hidden></div>
+                    <div class="chat-compose">
+                        <textarea id="chat-input" class="form-control" rows="2" placeholder="Message, or drop images and documents here…"></textarea>
+                        <button class="btn btn-primary chat-run-btn" type="submit" id="send-btn" title="Send" aria-label="Send">
+                            <i class="bi bi-arrow-up" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                    <p id="chat-activity" class="chat-activity mb-0" aria-live="polite"></p>
+                </div>
+            </form>
+        </div>
+        <div id="split-handle" class="cp-split-handle" role="separator" aria-orientation="vertical" aria-label="Resize chat and preview" tabindex="0"></div>
+        <div class="cp-pane cp-pane-preview bg-secondary-subtle" data-preview="desktop">
+            <div class="preview-toolbar">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="preview-back" title="Back" aria-label="Back">
+                    <i class="bi bi-arrow-left" aria-hidden="true"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="preview-reload" title="Reload" aria-label="Reload">
+                    <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="preview-hard-reload" title="Hard reload (bypass cache)" aria-label="Hard reload">
+                    <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+                </button>
+                <input id="preview-path" class="form-control form-control-sm preview-path" type="text" value="/" spellcheck="false" autocomplete="off" title="Current preview page" aria-label="Current preview page">
+            </div>
+            <div class="preview-stage">
+                <iframe id="staging-frame" title="Staging preview" src="{{ staging_url }}" class="preview-frame"></iframe>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="publishModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="post" action="/cp/publish">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <div class="modal-header">
+                <h2 class="modal-title h5">Publish draft to live</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>This copies <code>/staging</code> onto the live site. The chat and undo history are cleared after a successful publish. Type <strong>PUBLISH</strong> to confirm.</p>
+                <input class="form-control" name="confirm" required placeholder="PUBLISH" autocomplete="off">
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" type="submit">Publish</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="rollbackModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="post" action="/cp/rollback">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <div class="modal-header">
+                <h2 class="modal-title h5">Rollback live site</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Restores the previous live snapshot. Type <strong>ROLLBACK</strong> to confirm.</p>
+                <input class="form-control" name="confirm" required placeholder="ROLLBACK" autocomplete="off">
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline-danger" type="submit">Rollback</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="restoreModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h5">Restore this message?</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0">This reverts the staging draft to how it was when that message was sent. The message is removed from chat and put back in the input. Later chat is discarded. Inbox files are not changed.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-danger" type="button" id="restore-confirm-btn">Restore draft</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+window.CP = { csrf: {{ csrf|json_encode|raw }}, history: {{ history|default([])|json_encode|raw }}, canContinue: {{ can_continue|default(false)|json_encode|raw }}, stagingUrl: {{ staging_url|json_encode|raw }} };
+</script>
+<script src="/cp/assets/app.js?v={{ asset_js_v|default(1) }}"></script>
+{% endblock %}

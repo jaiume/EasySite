@@ -1,0 +1,66 @@
+{% extends "layout.twig" %}
+{% block title %}Settings{% endblock %}
+{% block body %}
+<header class="border-bottom bg-white px-3 py-2">
+    <div class="d-flex flex-wrap align-items-center gap-2">
+        <a href="/cp/" class="text-decoration-none text-body"><strong>Site editor</strong></a>
+        <span class="text-secondary">/</span>
+        <span>Settings</span>
+        <div class="ms-auto d-flex align-items-center gap-2">
+            {% include "_account_icons.twig" with { settings_active: true } %}
+        </div>
+    </div>
+</header>
+<div class="container py-4" style="max-width: 40rem;">
+    <h1 class="h4 mb-3">Settings</h1>
+    {% if flash %}
+        <div class="alert alert-{{ flash.ok ? 'success' : 'danger' }}">{{ flash.message }}</div>
+    {% endif %}
+    <form method="post" action="/cp/settings" class="card card-body shadow-sm">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <div class="mb-3">
+            <label class="form-label" for="api-key">OpenRouter API key</label>
+            <input class="form-control font-monospace" id="api-key" name="api_key" type="text" value="{{ api_key }}" autocomplete="off" spellcheck="false">
+            <div class="form-text">Saved to <code>config.ini</code>. Required for chat and image models.</div>
+        </div>
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="form-label mb-0">Models</span>
+            <button class="btn btn-sm btn-outline-secondary" type="button" id="refresh-models">Refresh from OpenRouter</button>
+        </div>
+        <p id="models-status" class="form-text mt-0 mb-3"></p>
+        <div class="mb-3">
+            <label class="form-label" for="chat-filter">Chat model</label>
+            <input class="form-control form-control-sm mb-2" id="chat-filter" type="search" placeholder="Filter chat models" autocomplete="off">
+            <select class="form-select" id="chat-model" name="chat_model" required>
+                {% if chat_models is empty %}
+                    <option value="{{ chat_model }}" selected>{{ chat_model }}</option>
+                {% else %}
+                    {% for m in chat_models %}
+                        <option value="{{ m.id }}" {% if m.id == chat_model %}selected{% endif %}>{{ m.name }}{% if m.price %} ({{ m.price }}){% else %} ({{ m.id }}){% endif %}</option>
+                    {% endfor %}
+                {% endif %}
+            </select>
+        </div>
+        <div class="mb-3">
+            <label class="form-label" for="image-filter">Image model</label>
+            <input class="form-control form-control-sm mb-2" id="image-filter" type="search" placeholder="Filter image models" autocomplete="off">
+            <select class="form-select" id="image-model" name="image_model" required>
+                {% if image_models is empty %}
+                    <option value="{{ image_model }}" selected>{{ image_model }}</option>
+                {% else %}
+                    {% for m in image_models %}
+                        <option value="{{ m.id }}" {% if m.id == image_model %}selected{% endif %}>{{ m.name }}{% if m.price %} ({{ m.price }}){% else %} ({{ m.id }}){% endif %}</option>
+                    {% endfor %}
+                {% endif %}
+            </select>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-primary" type="submit">Save</button>
+            <a class="btn btn-outline-secondary" href="/cp/">Back to editor</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/cp/assets/settings.js"></script>
+{% endblock %}

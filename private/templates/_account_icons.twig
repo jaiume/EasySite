@@ -1,0 +1,12 @@
+<a href="/" class="btn btn-sm btn-outline-secondary" title="Open live site" aria-label="Open live site" target="_blank" rel="noopener noreferrer">
+    <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
+</a>
+<a href="/cp/settings" class="btn btn-sm {{ settings_active|default(false) ? 'btn-secondary' : 'btn-outline-secondary' }}" title="Settings" aria-label="Settings">
+    <i class="bi bi-gear" aria-hidden="true"></i>
+</a>
+<form method="post" action="/cp/logout" class="d-inline">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <button class="btn btn-sm btn-outline-secondary" type="submit" title="Sign out" aria-label="Sign out">
+        <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
+    </button>
+</form>

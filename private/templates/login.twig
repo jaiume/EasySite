@@ -1,0 +1,23 @@
+{% extends "layout.twig" %}
+{% block title %}Sign in{% endblock %}
+{% block body %}
+<div class="container py-5" style="max-width: 28rem;">
+    <h1 class="h3 mb-3">Tash Inc Control</h1>
+    <p class="text-secondary">Sign in to edit the draft site, then publish when it looks right.</p>
+    {% if error %}
+        <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="/cp/login" class="card card-body shadow-sm">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <div class="mb-3">
+            <label class="form-label" for="username">Username</label>
+            <input class="form-control" id="username" name="username" required autocomplete="username">
+        </div>
+        <div class="mb-3">
+            <label class="form-label" for="password">Password</label>
+            <input class="form-control" type="password" id="password" name="password" required autocomplete="current-password">
+        </div>
+        <button class="btn btn-primary" type="submit">Sign in</button>
+    </form>
+</div>
+{% endblock %}

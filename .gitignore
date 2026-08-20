@@ -1,0 +1,15 @@
+# Generated brochure: staging draft and published live site.
+# Live is the public_html docroot (everything except /cp).
+/public_html/staging/
+/public_html/live/
+/public_html/*
+!/public_html/cp/
+!/public_html/cp/**
+
+# HestiaCP generated
+/logs/
+/stats/
+/cgi-bin/
+/document_errors/
+
+.htpasswd

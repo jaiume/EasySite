@@ -1,0 +1,40 @@
+; Copy to config.ini and fill in real values. Do not commit config.ini.
+
+[auth]
+username = "admin"
+password = "changeme"
+
+[openrouter]
+api_key = ""
+default_chat_model = "anthropic/claude-sonnet-4.5"
+default_image_model = "black-forest-labs/flux.2-pro"
+catalog_ttl_seconds = 21600
+monthly_spend_cap = 10.00
+max_tool_rounds = 15
+
+[paths]
+; Absolute filesystem paths. Defaults are derived if left empty.
+docroot = ""
+staging_root = ""
+live_root = ""
+
+[security]
+session_name = "tash_cp"
+csrf_ttl_seconds = 28800
+login_max_attempts = 8
+login_window_seconds = 900
+html_max_bytes = 524288
+image_max_bytes = 5242880
+read_file_max_bytes = 204800
+list_dir_max_entries = 200
+fetch_timeout_seconds = 10
+crawl_default_depth = 2
+crawl_max_depth = 4
+crawl_max_pages = 50
+crawl_delay_ms = 200
+max_redirects = 3
+backup_keep = 10
+
+[logging]
+tool_log = "var/data/logs/tools.jsonl"
+spend_log = "var/data/logs/spend.jsonl"
