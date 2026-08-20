@@ -59,6 +59,26 @@
             <a class="btn btn-outline-secondary" href="/cp/">Back to editor</a>
         </div>
     </form>
+    <div class="card card-body shadow-sm mt-4">
+        <h2 class="h6">Diagnostic logs</h2>
+        <p class="text-secondary small mb-3">Download a zip of application logs, the current chat, and server details. The API key and password are removed. Attach this file when something goes wrong.</p>
+        <ul class="list-unstyled small mb-3">
+            {% for file in log_files %}
+                <li>
+                    <span class="fw-medium">{{ file.label }}</span>
+                    {% if file.exists %}
+                        — {{ file.size }}{% if file.modified %}, {{ file.modified }}{% endif %}
+                    {% else %}
+                        — none yet
+                    {% endif %}
+                </li>
+            {% endfor %}
+        </ul>
+        <form method="post" action="/cp/settings/logs">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <button class="btn btn-outline-primary" type="submit">Download logs</button>
+        </form>
+    </div>
 </div>
 {% endblock %}
 {% block scripts %}

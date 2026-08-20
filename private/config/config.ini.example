@@ -38,3 +38,4 @@ backup_keep = 10
 [logging]
 tool_log = "var/data/logs/tools.jsonl"
 spend_log = "var/data/logs/spend.jsonl"
+app_log = "var/data/logs/app.log"

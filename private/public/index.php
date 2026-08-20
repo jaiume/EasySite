@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Middleware\SessionMiddleware;
+use App\Support\Config;
 use DI\ContainerBuilder;
 use Slim\Factory\AppFactory;
 use Slim\Views\Twig;
@@ -34,6 +35,15 @@ $builder->addDefinitions([
     },
 ]);
 $container = $builder->build();
+
+$config = $container->get(Config::class);
+$appLog = $config->resolveVarPath($config->string('logging.app_log', 'var/data/logs/app.log'));
+$appLogDir = dirname($appLog);
+if (!is_dir($appLogDir)) {
+    mkdir($appLogDir, 0770, true);
+}
+ini_set('log_errors', '1');
+ini_set('error_log', $appLog);
 
 AppFactory::setContainer($container);
 $app = AppFactory::create();

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controllers\Web;
 
 use App\Services\CsrfService;
+use App\Services\LogExportService;
 use App\Services\ModelCatalogService;
 use App\Support\Config;
 use Psr\Http\Message\ResponseInterface;
@@ -19,6 +20,7 @@ final class SettingsController
         private readonly CsrfService $csrf,
         private readonly ModelCatalogService $catalog,
         private readonly Config $config,
+        private readonly LogExportService $logs,
     ) {
     }
 
@@ -35,8 +37,28 @@ final class SettingsController
             'image_models' => $catalog['image'],
             'chat_model' => $this->currentChatModel(),
             'image_model' => $this->currentImageModel(),
+            'log_files' => $this->logs->summaries(),
             'flash' => is_array($flash) ? $flash : null,
         ]);
+    }
+
+    public function exportLogs(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
+    {
+        try {
+            $bundle = $this->logs->build();
+        } catch (\Throwable $e) {
+            $_SESSION['flash'] = ['ok' => false, 'message' => 'Could not build the log export.'];
+
+            return (new Response(302))->withHeader('Location', '/cp/settings');
+        }
+        $download = new Response(200);
+        $download->getBody()->write($bundle['bytes']);
+
+        return $download
+            ->withHeader('Content-Type', 'application/zip')
+            ->withHeader('Content-Disposition', 'attachment; filename="' . $bundle['filename'] . '"')
+            ->withHeader('Content-Length', (string) strlen($bundle['bytes']))
+            ->withHeader('Cache-Control', 'no-store');
     }
 
     public function save(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
