@@ -24,7 +24,7 @@ final class OpenRouterClient
     /**
      * @param list<array<string, mixed>> $messages
      * @param list<array<string, mixed>> $tools
-     * @param callable(): void|null $onProgress
+     * @param callable(): bool|null $onProgress Return false to abort the HTTP request.
      * @return array<string, mixed>
      */
     public function chat(string $model, array $messages, array $tools, int $timeoutSeconds = 0, ?callable $onProgress = null): array
@@ -89,7 +89,7 @@ final class OpenRouterClient
     }
 
     /**
-     * @param callable(): void|null $onProgress
+     * @param callable(): bool|null $onProgress Return false to abort the HTTP request.
      * @param array<string, mixed> $payload
      * @return array<string, mixed>
      */
@@ -106,7 +106,7 @@ final class OpenRouterClient
         if ($ch === false) {
             throw new \RuntimeException('Unable to start OpenRouter request.');
         }
-        $lastPing = 0.0;
+        $lastCheck = 0.0;
         curl_setopt_array($ch, [
             CURLOPT_POST => true,
             CURLOPT_RETURNTRANSFER => true,
@@ -119,25 +119,32 @@ final class OpenRouterClient
             CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE),
             CURLOPT_CONNECTTIMEOUT => 10,
             CURLOPT_TIMEOUT => $timeout,
-            CURLOPT_NOPROGRESS => $onProgress === null,
-            CURLOPT_PROGRESSFUNCTION => static function ($ch, $dt, $dn, $ut, $un) use ($onProgress, &$lastPing): int {
+            CURLOPT_NOPROGRESS => false,
+            CURLOPT_PROGRESSFUNCTION => static function ($ch, $dt, $dn, $ut, $un) use ($onProgress, &$lastCheck): int {
+                if (connection_aborted()) {
+                    return 1;
+                }
+                $now = microtime(true);
+                if ($now - $lastCheck < 0.4) {
+                    return 0;
+                }
+                $lastCheck = $now;
                 if ($onProgress === null) {
                     return 0;
                 }
-                $now = microtime(true);
-                if ($now - $lastPing < 2.0) {
-                    return 0;
-                }
-                $lastPing = $now;
-                $onProgress();
 
-                return 0;
+                return $onProgress() === false ? 1 : 0;
             },
         ]);
         $raw = curl_exec($ch);
         $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
         $err = curl_error($ch);
         curl_close($ch);
+        $aborted = connection_aborted()
+            || ($err !== '' && (stripos($err, 'aborted') !== false || stripos($err, 'callback') !== false));
+        if ($aborted) {
+            throw new OpenRouterException('Stopped.', $err !== '' ? $err : 'Request aborted.', 0, false, true);
+        }
         if (!is_string($raw) || $raw === '') {
             $timedOut = $err !== '' && (stripos($err, 'timed out') !== false || stripos($err, 'timeout') !== false);
             $message = $timedOut ? 'The model did not respond in time.' : ($err !== '' ? $err : 'Empty OpenRouter response.');

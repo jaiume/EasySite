@@ -11,6 +11,7 @@ final class OpenRouterException extends \RuntimeException
         private readonly string $details,
         int $code = 0,
         private readonly bool $timeout = false,
+        private readonly bool $cancelled = false,
     ) {
         parent::__construct($message, $code);
     }
@@ -23,5 +24,10 @@ final class OpenRouterException extends \RuntimeException
     public function isTimeout(): bool
     {
         return $this->timeout;
+    }
+
+    public function isCancelled(): bool
+    {
+        return $this->cancelled;
     }
 }

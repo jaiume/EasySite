@@ -193,13 +193,38 @@ final class AgentLoopService
             }
             $timeout = (int) max(15, min($chatTimeout, $remaining - 3));
             $emit('status', ['message' => 'Talking to the model…']);
-            $onProgress = function () use ($emit, $runId): void {
+            $lastPing = 0.0;
+            $onProgress = function () use ($emit, $runId, &$lastPing): bool {
+                if ($this->runs->isCancelled($runId) || connection_aborted()) {
+                    return false;
+                }
                 $this->runs->touch($runId);
-                $emit('ping', []);
+                $now = microtime(true);
+                if ($now - $lastPing >= 2.0) {
+                    $lastPing = $now;
+                    $emit('ping', []);
+                }
+
+                return true;
             };
             try {
                 $response = $this->openRouter->chat($chatModel, $messages, $tools, $timeout, $onProgress);
             } catch (\Throwable $e) {
+                if ($e instanceof OpenRouterException && $e->isCancelled()) {
+                    $this->persist($runId, $chatModel, $imageModel, $messages, $round);
+                    if (connection_aborted()) {
+                        $this->pending->haltAuto();
+                        $this->chats->save($history);
+
+                        return;
+                    }
+                    $this->note($history, $emit, 'Paused: Stopped.');
+                    $this->chats->save($history);
+                    $emit('interrupted', ['message' => 'Stopped.', 'can_continue' => true, 'auto_continue' => false]);
+                    $emit('done', ['ok' => false, 'interrupted' => true, 'can_continue' => true, 'auto_continue' => false]);
+
+                    return;
+                }
                 if ($e instanceof OpenRouterException && $e->isTimeout()) {
                     $this->persist($runId, $chatModel, $imageModel, $messages, $round);
                     $this->note($history, $emit, 'Paused: ' . $e->getMessage());

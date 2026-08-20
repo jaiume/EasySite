@@ -74,6 +74,9 @@ final class ChatController
         }
         $this->runs->cancelActive();
         $runId = $this->runs->start();
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
         if ($resume) {
             $this->pending->resumeAuto();
         }
