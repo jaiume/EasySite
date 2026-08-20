@@ -533,6 +533,13 @@
         append("assistant", row.content || "");
     });
 
+    function revokePreview(item) {
+        if (item && item.preview) {
+            URL.revokeObjectURL(item.preview);
+            item.preview = "";
+        }
+    }
+
     function renderChips() {
         chipBox.innerHTML = "";
         if (attachments.length === 0) {
@@ -543,12 +550,26 @@
         attachments.forEach(function (item, index) {
             const chip = document.createElement("span");
             chip.className = "badge text-bg-light border chat-chip";
-            chip.textContent = item.filename + " ";
+            chip.title = item.filename || "Attachment";
+            if (item.preview) {
+                chip.classList.add("chat-chip-image");
+                const img = document.createElement("img");
+                img.className = "chat-chip-thumb";
+                img.src = item.preview;
+                img.alt = item.filename || "Attached image";
+                chip.appendChild(img);
+            } else {
+                const name = document.createElement("span");
+                name.className = "chat-chip-name";
+                name.textContent = item.filename || "file";
+                chip.appendChild(name);
+            }
             const remove = document.createElement("button");
             remove.type = "button";
             remove.className = "btn-close btn-close-sm";
-            remove.setAttribute("aria-label", "Remove " + item.filename);
+            remove.setAttribute("aria-label", "Remove " + (item.filename || "attachment"));
             remove.addEventListener("click", function () {
+                revokePreview(attachments[index]);
                 attachments.splice(index, 1);
                 renderChips();
             });
@@ -561,8 +582,15 @@
         const files = Array.prototype.slice.call(fileList || []);
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
+            const preview = (file.type || "").indexOf("image/") === 0 ? URL.createObjectURL(file) : "";
+            const draft = {
+                filename: file.name || "image",
+                preview: preview,
+            };
+            attachments.push(draft);
+            renderChips();
             const body = new FormData();
-            body.append("file", file, file.name);
+            body.append("file", file, file.name || "image.png");
             try {
                 const res = await fetch("/cp/api/attachments", {
                     method: "POST",
@@ -570,14 +598,30 @@
                     body: body,
                 });
                 const data = await res.json();
+                const index = attachments.indexOf(draft);
                 if (!data.success) {
-                    append("error", data.message || "Could not attach " + file.name);
+                    if (index >= 0) {
+                        attachments.splice(index, 1);
+                    }
+                    revokePreview(draft);
+                    renderChips();
+                    append("error", data.message || "Could not attach " + (file.name || "image"));
                     continue;
                 }
-                attachments.push(data.data);
+                const row = data.data || {};
+                row.preview = preview;
+                if (index >= 0) {
+                    attachments[index] = row;
+                }
                 renderChips();
             } catch (e) {
-                append("error", "Could not attach " + file.name);
+                const index = attachments.indexOf(draft);
+                if (index >= 0) {
+                    attachments.splice(index, 1);
+                }
+                revokePreview(draft);
+                renderChips();
+                append("error", "Could not attach " + (file.name || "image"));
             }
         }
     }
@@ -958,6 +1002,7 @@
         }
         const pending = attachments.slice();
         input.value = "";
+        attachments.forEach(revokePreview);
         attachments = [];
         renderChips();
         const userEl = appendTurn(message || pending.map(function (a) { return a.filename; }).join(", "), "").user;

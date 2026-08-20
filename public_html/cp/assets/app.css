@@ -263,6 +263,22 @@ html, body {
     gap: 0.25rem;
     font-weight: 500;
 }
+.chat-chip-image {
+    padding: 0.2rem 0.35rem 0.2rem 0.2rem;
+}
+.chat-chip-thumb {
+    width: 2.5rem;
+    height: 2.5rem;
+    object-fit: cover;
+    border-radius: 0.2rem;
+    background: #e9ecef;
+}
+.chat-chip-name {
+    max-width: 8rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 .chat-chip .btn-close {
     font-size: 0.55rem;
 }
