@@ -275,7 +275,12 @@
             div.appendChild(document.createTextNode(" "));
             div.appendChild(errorInfo(options.details));
         }
-        log.appendChild(div);
+        const turn = lastTurn();
+        if (turn && (kind === "assistant" || kind === "error")) {
+            turn.appendChild(div);
+        } else {
+            log.appendChild(div);
+        }
         log.scrollTop = log.scrollHeight;
         return div;
     }
@@ -324,60 +329,144 @@
         return item.text.indexOf("Using ") === 0;
     }
 
-    function toolCountLabel(n) {
-        return n === 1 ? "1 tool call" : n + " tool calls";
+    function toolIconClass(name) {
+        const icons = {
+            read_file: "bi-file-earmark-text",
+            write_file: "bi-pencil-square",
+            edit_file: "bi-pencil",
+            list_dir: "bi-folder2-open",
+            search: "bi-search",
+            mkdir: "bi-folder-plus",
+            copy_file: "bi-copy",
+            rename: "bi-input-cursor-text",
+            delete: "bi-trash",
+            fetch_page: "bi-globe",
+            inspect_page: "bi-eye",
+            inspect_draft: "bi-eye",
+            list_site: "bi-diagram-3",
+            fetch_image: "bi-image",
+            generate_image: "bi-image",
+            list_inbox: "bi-inbox",
+            read_inbox: "bi-inbox",
+            import_to_staging: "bi-box-arrow-in-down",
+        };
+        return icons[name] || "bi-wrench";
     }
 
-    function currentToolsBox(host) {
-        const last = host.lastElementChild;
-        if (last && last.classList.contains("msg-tools")) {
-            return last;
+    function humanToolName(name) {
+        const labels = {
+            read_file: "Read file",
+            write_file: "Wrote file",
+            edit_file: "Edited file",
+            list_dir: "Listed folder",
+            search: "Searched",
+            mkdir: "Created folder",
+            copy_file: "Copied file",
+            rename: "Renamed",
+            delete: "Deleted",
+            fetch_page: "Fetched page",
+            inspect_page: "Inspected page",
+            inspect_draft: "Inspected draft",
+            list_site: "Listed site",
+            fetch_image: "Fetched image",
+            generate_image: "Generated image",
+            list_inbox: "Listed inbox",
+            read_inbox: "Read inbox",
+            import_to_staging: "Imported to draft",
+        };
+        if (labels[name]) {
+            return labels[name];
         }
-        const box = document.createElement("details");
-        box.className = "msg-tools";
+        return (name || "Tool").replace(/_/g, " ");
+    }
+
+    function parseTool(item) {
+        const text = item.text || "";
+        const match = text.match(/^Using\s+(\S+)(?:\s+[—–-]\s+(.*))?$/);
+        const name = item.name || (match ? match[1] : "");
+        return {
+            name: name,
+            label: humanToolName(name),
+            detail: match && match[2] ? match[2] : "",
+        };
+    }
+
+    function actionsBox(host) {
+        let box = host.querySelector(":scope > .msg-actions");
+        if (box) {
+            return box;
+        }
+        box = document.createElement("details");
+        box.className = "msg-actions";
+        box.open = true;
         const summary = document.createElement("summary");
-        summary.className = "msg-tools-summary";
-        summary.textContent = toolCountLabel(0);
+        summary.className = "msg-actions-summary";
+        summary.textContent = "Working";
         box.appendChild(summary);
         const list = document.createElement("div");
-        list.className = "msg-tools-list";
+        list.className = "msg-actions-list";
         box.appendChild(list);
         host.appendChild(box);
         return box;
+    }
+
+    function updateActionsSummary(box) {
+        const n = box.querySelectorAll(".msg-action-tool").length;
+        const summary = box.querySelector("summary");
+        if (!summary) {
+            return;
+        }
+        if (n === 0) {
+            summary.textContent = "Thought";
+        } else if (n === 1) {
+            summary.textContent = "1 tool";
+        } else {
+            summary.textContent = n + " tools";
+        }
     }
 
     function addActivityLine(host, item) {
         if (!host || !item || !item.text || isQuietNote(item.text)) {
             return;
         }
+        const box = actionsBox(host);
+        const list = box.querySelector(".msg-actions-list");
+        const last = list.lastElementChild;
+        const sameText = last && last.getAttribute("data-text") === item.text;
+        if (sameText) {
+            return;
+        }
+        const row = document.createElement("div");
+        row.setAttribute("data-text", item.text);
+        const icon = document.createElement("i");
+        icon.setAttribute("aria-hidden", "true");
+        const body = document.createElement("span");
+        body.className = "msg-action-body";
+        const label = document.createElement("span");
+        label.className = "msg-action-label";
         if (isToolItem(item)) {
-            const box = currentToolsBox(host);
-            const list = box.querySelector(".msg-tools-list");
-            const lastTool = list ? list.querySelector(".msg-tool:last-child") : null;
-            if (lastTool && lastTool.textContent === item.text) {
-                return;
+            const parsed = parseTool(item);
+            row.className = "msg-action msg-action-tool";
+            icon.className = "bi " + toolIconClass(parsed.name);
+            label.textContent = parsed.label;
+            body.appendChild(label);
+            if (parsed.detail) {
+                const detail = document.createElement("span");
+                detail.className = "msg-action-detail";
+                detail.textContent = parsed.detail;
+                detail.title = parsed.detail;
+                body.appendChild(detail);
             }
-            const line = document.createElement("div");
-            line.className = "msg msg-tool";
-            line.textContent = item.text;
-            list.appendChild(line);
-            const n = list.querySelectorAll(".msg-tool").length;
-            const summary = box.querySelector("summary");
-            if (summary) {
-                summary.textContent = toolCountLabel(n);
-            }
-            log.scrollTop = log.scrollHeight;
-            return;
+        } else {
+            row.className = "msg-action msg-action-thought";
+            icon.className = "bi bi-circle";
+            label.textContent = item.text;
+            body.appendChild(label);
         }
-        const thoughts = host.querySelectorAll(":scope > .msg-status");
-        const lastThought = thoughts.length ? thoughts[thoughts.length - 1] : null;
-        if (lastThought && lastThought.textContent === item.text) {
-            return;
-        }
-        const line = document.createElement("div");
-        line.className = "msg msg-status";
-        line.textContent = item.text;
-        host.appendChild(line);
+        row.appendChild(icon);
+        row.appendChild(body);
+        list.appendChild(row);
+        updateActionsSummary(box);
         log.scrollTop = log.scrollHeight;
     }
 
@@ -1105,18 +1194,13 @@
         if (!host) {
             return;
         }
-        Array.prototype.slice.call(host.querySelectorAll(".msg")).forEach(function (el) {
-            if (isQuietNote(el.textContent || "")) {
-                el.remove();
-            }
-        });
         const filtered = (items || []).filter(function (item) {
             return item && item.text && !isQuietNote(item.text);
         });
         if (!filtered.length) {
             return;
         }
-        const shown = host.querySelectorAll(".msg").length;
+        const shown = host.querySelectorAll(".msg-action").length;
         for (let i = shown; i < filtered.length; i++) {
             addActivityLine(host, filtered[i]);
         }
@@ -1436,6 +1520,7 @@
             setActivity(data.name ? "Using " + data.name : "Thinking");
             addActivityLine(activityHostFor(userEl), {
                 kind: "tool",
+                name: data.name || "",
                 text: data.text || (data.name ? "Using " + data.name : "Using tool"),
             });
         } else if (event === "activity") {
