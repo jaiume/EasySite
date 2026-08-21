@@ -25,6 +25,7 @@ return static function (App $app): void {
         $group->get('/', [AppController::class, 'index']);
         $group->get('/settings', [SettingsController::class, 'show']);
         $group->post('/settings', [SettingsController::class, 'save']);
+        $group->post('/settings/password', [SettingsController::class, 'changePassword']);
         $group->post('/settings/logs', [SettingsController::class, 'exportLogs']);
         $group->post('/logout', [LoginController::class, 'logout']);
         $group->post('/publish', [PublishController::class, 'publish']);

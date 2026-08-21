@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers\Web;
 
+use App\Services\AuthService;
 use App\Services\CsrfService;
 use App\Services\LogExportService;
 use App\Services\ModelCatalogService;
@@ -21,6 +22,7 @@ final class SettingsController
         private readonly ModelCatalogService $catalog,
         private readonly Config $config,
         private readonly LogExportService $logs,
+        private readonly AuthService $auth,
     ) {
     }
 
@@ -38,6 +40,7 @@ final class SettingsController
             'chat_model' => $this->currentChatModel(),
             'image_model' => $this->currentImageModel(),
             'log_files' => $this->logs->summaries(),
+            'username' => $this->auth->user() ?? $this->config->string('auth.username'),
             'flash' => is_array($flash) ? $flash : null,
         ]);
     }
@@ -92,6 +95,21 @@ final class SettingsController
             return (new Response(302))->withHeader('Location', '/cp/settings');
         }
         $_SESSION['flash'] = ['ok' => true, 'message' => 'Settings saved.'];
+
+        return (new Response(302))->withHeader('Location', '/cp/settings');
+    }
+
+    public function changePassword(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
+    {
+        $body = $request->getParsedBody();
+        $current = is_array($body) ? (string) ($body['current_password'] ?? '') : '';
+        $new = is_array($body) ? (string) ($body['new_password'] ?? '') : '';
+        $confirm = is_array($body) ? (string) ($body['confirm_password'] ?? '') : '';
+        $result = $this->auth->changePassword($current, $new, $confirm);
+        $_SESSION['flash'] = [
+            'ok' => (bool) $result['success'],
+            'message' => (string) $result['message'],
+        ];
 
         return (new Response(302))->withHeader('Location', '/cp/settings');
     }

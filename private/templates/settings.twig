@@ -59,6 +59,25 @@
             <a class="btn btn-outline-secondary" href="/cp/">Back to editor</a>
         </div>
     </form>
+    <form method="post" action="/cp/settings/password" class="card card-body shadow-sm mt-4">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <h2 class="h6">Change password</h2>
+        <p class="text-secondary small mb-3">Signed in as <strong>{{ username }}</strong>. The new password is saved to <code>config.ini</code> and used the next time you sign in.</p>
+        <div class="mb-3">
+            <label class="form-label" for="current-password">Current password</label>
+            <input class="form-control" id="current-password" name="current_password" type="password" required autocomplete="current-password">
+        </div>
+        <div class="mb-3">
+            <label class="form-label" for="new-password">New password</label>
+            <input class="form-control" id="new-password" name="new_password" type="password" required minlength="8" maxlength="200" autocomplete="new-password">
+            <div class="form-text">At least 8 characters.</div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label" for="confirm-password">Confirm new password</label>
+            <input class="form-control" id="confirm-password" name="confirm_password" type="password" required minlength="8" maxlength="200" autocomplete="new-password">
+        </div>
+        <button class="btn btn-outline-primary" type="submit">Change password</button>
+    </form>
     <div class="card card-body shadow-sm mt-4">
         <h2 class="h6">Diagnostic logs</h2>
         <p class="text-secondary small mb-3">Download a JSON file of application logs, the current chat, and server details. The API key and password are removed. Attach this file when something goes wrong.</p>
