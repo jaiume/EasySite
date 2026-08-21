@@ -64,4 +64,23 @@ final class FetchAndCompactTest extends TestCase
         self::assertSame('{"ok":true,"keep":"me"}', $out[3]['content']);
         self::assertSame('go', $out[1]['content']);
     }
+
+    public function testCompactorStubsOldMultimodalToolResults(): void
+    {
+        $messages = [
+            ['role' => 'tool', 'tool_call_id' => 'old', 'content' => [
+                ['type' => 'text', 'text' => 'old shot'],
+                ['type' => 'image_url', 'image_url' => ['url' => 'data:image/jpeg;base64,xxx']],
+            ]],
+            ['role' => 'tool', 'tool_call_id' => 'new', 'content' => [
+                ['type' => 'text', 'text' => '{"ok":true}'],
+                ['type' => 'image_url', 'image_url' => ['url' => 'data:image/jpeg;base64,yyy']],
+            ]],
+        ];
+        $out = MessageCompactor::compact($messages, 1, 4000);
+        self::assertIsString($out[0]['content']);
+        self::assertStringContainsString('omitted', $out[0]['content']);
+        self::assertIsArray($out[1]['content']);
+        self::assertSame('{"ok":true}', $out[1]['content'][0]['text'] ?? null);
+    }
 }

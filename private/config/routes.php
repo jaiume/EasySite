@@ -10,6 +10,7 @@ use App\Controllers\Api\RestoreController;
 use App\Controllers\Api\SpendController;
 use App\Controllers\Web\AppController;
 use App\Controllers\Web\LoginController;
+use App\Controllers\Web\PreviewController;
 use App\Controllers\Web\PublishController;
 use App\Controllers\Web\SettingsController;
 use App\Middleware\AuthMiddleware;
@@ -23,6 +24,7 @@ return static function (App $app): void {
 
     $app->group('', function (RouteCollectorProxy $group): void {
         $group->get('/', [AppController::class, 'index']);
+        $group->get('/preview[/{path:.*}]', [PreviewController::class, 'show']);
         $group->get('/settings', [SettingsController::class, 'show']);
         $group->post('/settings', [SettingsController::class, 'save']);
         $group->post('/settings/password', [SettingsController::class, 'changePassword']);

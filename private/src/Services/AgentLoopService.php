@@ -26,6 +26,7 @@ final class AgentLoopService
         private readonly InboxToolService $inbox,
         private readonly HttpToolService $http,
         private readonly ImageToolService $images,
+        private readonly DraftViewService $drafts,
         private readonly ChatStore $chats,
         private readonly CheckpointService $checkpoints,
         private readonly RunRegistry $runs,
@@ -380,12 +381,31 @@ final class AgentLoopService
                     $usage['searches']++;
                 }
             }
+            $imageJpeg = '';
+            if (is_array($result['data'] ?? null) && isset($result['data']['screenshot_jpeg']) && is_string($result['data']['screenshot_jpeg'])) {
+                $imageJpeg = $result['data']['screenshot_jpeg'];
+                unset($result['data']['screenshot_jpeg']);
+            }
             $payload = json_encode($result, JSON_UNESCAPED_SLASHES);
-            $messages[] = [
-                'role' => 'tool',
-                'tool_call_id' => $id,
-                'content' => is_string($payload) ? $payload : '{"success":false}',
-            ];
+            if ($payload === false) {
+                $payload = '{"success":false}';
+            }
+            if ($imageJpeg !== '') {
+                $messages[] = [
+                    'role' => 'tool',
+                    'tool_call_id' => $id,
+                    'content' => [
+                        ['type' => 'text', 'text' => $payload],
+                        ['type' => 'image_url', 'image_url' => ['url' => 'data:image/jpeg;base64,' . $imageJpeg]],
+                    ],
+                ];
+            } else {
+                $messages[] = [
+                    'role' => 'tool',
+                    'tool_call_id' => $id,
+                    'content' => $payload,
+                ];
+            }
             $this->persist($runId, $chatModel, $imageModel, $messages, $round);
         }
 
@@ -691,6 +711,12 @@ final class AgentLoopService
             $this->fn('inspect_draft', 'Learn colours, fonts, and header/footer layout from the staging draft (local files). Use after edits to check the draft look. path is a page such as index.php, or css/site.css.', [
                 'path' => ['type' => 'string', 'description' => 'Staging page, default index.php'],
             ]),
+            $this->fn('view_draft', 'See the rendered staging page at a real screen width, not the squeezed editor iframe. Default desktop 1440px. Use size phone|tablet|laptop|desktop|wide, or width in pixels. Returns headings, images, text, and which CSS @media rules apply. Attaches a screenshot when a headless browser is available.', [
+                'path' => ['type' => 'string', 'description' => 'Staging page, default index.php'],
+                'size' => ['type' => 'string', 'description' => 'phone, tablet, laptop, desktop, or wide'],
+                'width' => ['type' => 'integer', 'description' => 'Viewport width in pixels, 320–2560'],
+                'height' => ['type' => 'integer', 'description' => 'Viewport height in pixels'],
+            ]),
             $this->fn('list_site', 'Crawl https URLs under the same host and path prefix.', [
                 'url' => ['type' => 'string'],
                 'depth' => ['type' => 'integer'],
@@ -734,6 +760,7 @@ final class AgentLoopService
             'fetch_page' => $this->http->fetchPage($args),
             'inspect_page' => $this->http->inspectPage($args),
             'inspect_draft' => $this->files->inspectDraft($args),
+            'view_draft' => $this->drafts->view($args),
             'list_site' => $this->http->listSite($args),
             'fetch_image' => $this->http->fetchImage($args),
             'generate_image' => $this->images->generateImage($args, $imageModel),

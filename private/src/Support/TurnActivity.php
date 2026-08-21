@@ -20,6 +20,9 @@ final class TurnActivity
                 $parts[] = $key === 'old' ? self::clip($args[$key], 40) : $args[$key];
             }
         }
+        if (isset($args['width']) && is_numeric($args['width'])) {
+            $parts[] = ((int) $args['width']) . 'px';
+        }
         if (isset($args['prompt']) && is_string($args['prompt']) && $args['prompt'] !== '') {
             $parts[] = self::clip($args['prompt'], 80);
         }

@@ -29,9 +29,16 @@ final class MessageCompactor
             if (!is_array($row) || ($row['role'] ?? '') !== 'tool') {
                 continue;
             }
-            $content = (string) ($row['content'] ?? '');
+            $content = $row['content'] ?? '';
             if (!isset($keep[$i])) {
                 $messages[$i]['content'] = $stub;
+                continue;
+            }
+            if (is_array($content)) {
+                $messages[$i]['content'] = self::compactParts($content, $maxChars);
+                continue;
+            }
+            if (!is_string($content)) {
                 continue;
             }
             if (strlen($content) > $maxChars) {
@@ -40,5 +47,34 @@ final class MessageCompactor
         }
 
         return $messages;
+    }
+
+    /**
+     * @param list<mixed> $parts
+     * @return string|list<array<string, mixed>>
+     */
+    private static function compactParts(array $parts, int $maxChars): mixed
+    {
+        $text = '';
+        $hasImage = false;
+        foreach ($parts as $part) {
+            if (!is_array($part)) {
+                continue;
+            }
+            if (($part['type'] ?? '') === 'text') {
+                $text .= (string) ($part['text'] ?? '');
+            }
+            if (($part['type'] ?? '') === 'image_url') {
+                $hasImage = true;
+            }
+        }
+        if (strlen($text) > $maxChars) {
+            return mb_substr($text, 0, $maxChars) . '…';
+        }
+        if ($hasImage && strlen($text) <= $maxChars) {
+            return $parts;
+        }
+
+        return $text !== '' ? $text : $parts;
     }
 }

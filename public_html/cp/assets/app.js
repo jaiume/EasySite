@@ -128,6 +128,7 @@
         const reloadBtn = document.getElementById("preview-reload");
         const hardReloadBtn = document.getElementById("preview-hard-reload");
         const pathInput = document.getElementById("preview-path");
+        const openTab = document.getElementById("preview-open-tab");
         const root = (window.CP.stagingUrl || "/staging/").replace(/\/?$/, "/");
         if (!frame || !pathInput) {
             return;
@@ -152,6 +153,9 @@
             if (path.indexOf("/staging") === 0) {
                 path = path.slice("/staging".length) || "/";
             }
+            if (path.indexOf("/cp/preview") === 0) {
+                path = path.slice("/cp/preview".length) || "/";
+            }
             if (path === "" || path === "/index.php") {
                 path = "/";
             }
@@ -160,11 +164,26 @@
             const qs = params.toString();
             return path + (qs ? "?" + qs : "") + (loc.hash || "");
         }
+        function previewTabUrl() {
+            let shown = displayPath();
+            const hashIndex = shown.indexOf("#");
+            const hash = hashIndex >= 0 ? shown.slice(hashIndex) : "";
+            if (hashIndex >= 0) {
+                shown = shown.slice(0, hashIndex);
+            }
+            if (!shown || shown === "/") {
+                return "/cp/preview/" + hash;
+            }
+            return "/cp/preview/" + shown.replace(/^\//, "") + hash;
+        }
         function syncPath() {
             if (document.activeElement === pathInput) {
                 return;
             }
             pathInput.value = displayPath();
+            if (openTab) {
+                openTab.href = previewTabUrl();
+            }
         }
         function withCacheBust(href, bust) {
             try {
